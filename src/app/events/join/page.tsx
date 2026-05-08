@@ -16,6 +16,7 @@ import {
   where,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+import { buildJoinPasswordForgotMailtoHref } from "../../lib/contact-mail";
 import { setEventSession } from "../../lib/event-session";
 
 function normalizeParticipantKey(name: string): string {
@@ -105,6 +106,8 @@ export default function EventJoinPage() {
       .filter((e) => e.title.toLowerCase().includes(q))
       .slice(0, 12);
   }, [activeEvents, eventName]);
+
+  const joinPasswordForgotMailto = useMemo(() => buildJoinPasswordForgotMailtoHref(), []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -272,6 +275,17 @@ export default function EventJoinPage() {
               autoComplete="off"
               enterKeyHint="done"
             />
+            <div className="mt-1 flex flex-col gap-1">
+              <p className="text-[11px] leading-snug text-zinc-500">
+                ※パスワードが分からないときは、下記から運営へ依頼できます（返信先を本文に記入してください）。
+              </p>
+              <a
+                href={joinPasswordForgotMailto}
+                className="text-xs font-semibold text-blue-600 underline underline-offset-2"
+              >
+                参加用パスワードを忘れた方はこちら
+              </a>
+            </div>
           </label>
 
           <label className="flex flex-col gap-1">
