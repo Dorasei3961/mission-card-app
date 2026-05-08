@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function eventDoc(eventId) {
+      return get(/databases/$(database)/documents/events/$(eventId));
+    }
+
+    function eventExists(eventId) {
+      return exists(/databases/$(database)/documents/events/$(eventId));
+    }
+
+    function isEventActive(eventId) {
+      return eventExists(eventId) && eventDoc(eventId).data.status != "closed";
+    }
+
+    function isEventOwner(eventId) {
+      return isSignedIn()
+        && eventExists(eventId)
+        && eventDoc(eventId).data.ownerUid == request.auth.uid;
+    }
+
+    // NOTE:
+    // - "adminPin を参加者から取得不可" は同一ドキュメント内の field-level 制御ができないため、
+    //   events/{eventId} に adminPin を持たせたままでは実現できません。
+    // - "admin認証済み(localStorage)" を Rules 側で検証することはできません。
+    //   Rules で信頼できるのは request.auth のみです。
+    //
+    // 本ルールは「現機能を壊しにくくしつつ、第三者の改ざんを抑える」ため、
+    // 書き込み権限を owner と本人相当に限定しています。
+
+    match /events/{eventId} {
+      // events は公開読み取り
+      allow read: if true;
+
+      // 作成時は ownerUid = 自分
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.status == "active";
+
+      // イベント本体更新/削除は owner のみ、closed 後は不可
+      allow update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+
+      // 参加者
+      match /participants/{participantId} {
+        allow read: if true;
+
+        // 新規参加（active のみ）
+        // - owner
+        // - または participantId == auth.uid（旧方式）
+        // - または authUid を明示した本人作成（新方式移行用）
+        allow create: if isSignedIn()
+          && isEventActive(eventId)
+          && (
+            isEventOwner(eventId)
+            || participantId == request.auth.uid
+            || (
+              request.resource.data.authUid is string
+              && request.resource.data.authUid == request.auth.uid
+            )
+          );
+
+        // 更新（active のみ）
+        // - owner
+        // - 旧方式: doc id が auth.uid の本人
+        // - 移行方式: authUid フィールド一致の本人
+        allow update: if isSignedIn()
+          && isEventActive(eventId)
+          && (
+            isEventOwner(eventId)
+            || participantId == request.auth.uid
+            || (
+              resource.data.authUid is string
+              && resource.data.authUid == request.auth.uid
+              && request.resource.data.authUid == request.auth.uid
+            )
+          );
+
+        // 削除は owner のみ（active のみ）
+        allow delete: if isEventOwner(eventId) && isEventActive(eventId);
+      }
+
+      // 進捗
+      match /missionProgress/{progressId} {
+        // owner は全件閲覧可
+        // 本人は自分の progressId（旧方式 uid）または authUid 一致を閲覧可
+        allow read: if isSignedIn()
+          && (
+            isEventOwner(eventId)
+            || progressId == request.auth.uid
+            || (
+              resource.data.authUid is string
+              && resource.data.authUid == request.auth.uid
+            )
+          );
+
+        // 作成/更新は active のみ
+        // owner か本人（旧方式/移行方式）
+        allow create, update: if isSignedIn()
+          && isEventActive(eventId)
+          && (
+            isEventOwner(eventId)
+            || progressId == request.auth.uid
+            || (
+              request.resource.data.authUid is string
+              && request.resource.data.authUid == request.auth.uid
+            )
+          );
+
+        // 削除は owner のみ（active のみ）
+        allow delete: if isEventOwner(eventId) && isEventActive(eventId);
+      }
+
+      // ログは読み取りのみ（作成は owner または本人、更新/削除不可）
+      match /pointLogs/{logId} {
+        allow read: if true;
+        allow create: if isSignedIn()
+          && isEventActive(eventId)
+          && (
+            isEventOwner(eventId)
+            || (
+              request.resource.data.uid is string
+              && request.resource.data.uid == request.auth.uid
+            )
+          );
+        allow update, delete: if false;
+      }
+    }
+
+    // missions は読み取りのみ
+    match /missions/{missionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // users は本人のみ
+    match /users/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+  }
+}
+
