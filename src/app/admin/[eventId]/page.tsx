@@ -14,6 +14,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
 import { getAdminAccess, setAdminAccess } from "../../lib/event-session";
 import {
@@ -55,6 +56,9 @@ export default function EventAdminPage({ params }: Props) {
   const [gatePinBusy, setGatePinBusy] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [joinUrl, setJoinUrl] = useState("");
+  const [creatorNameDisplay, setCreatorNameDisplay] = useState("");
+  const [joinPasswordDisplay, setJoinPasswordDisplay] = useState("");
+  const [adminPinDisplay, setAdminPinDisplay] = useState("");
 
   const isOwner = Boolean(currentUid && ownerUid && currentUid === ownerUid);
   const canManage = isOwner || pinSession;
@@ -98,12 +102,18 @@ export default function EventAdminPage({ params }: Props) {
         setEventTitle("イベントが見つかりません");
         setOwnerUid("");
         setRankingVisible(false);
+        setCreatorNameDisplay("");
+        setJoinPasswordDisplay("");
+        setAdminPinDisplay("");
         setEventMissing(true);
         return;
       }
       setEventMissing(false);
       const data = snap.data() as {
         title?: string;
+        creatorName?: string;
+        joinPassword?: unknown;
+        adminPin?: unknown;
         ownerUid?: string;
         rankingVisible?: boolean;
         password?: string;
@@ -111,6 +121,11 @@ export default function EventAdminPage({ params }: Props) {
         joinUrl?: string;
       };
       setEventTitle(String(data.title ?? "イベント"));
+      setCreatorNameDisplay(String(data.creatorName ?? "").trim());
+      setJoinPasswordDisplay(
+        typeof data.joinPassword === "string" ? data.joinPassword : "",
+      );
+      setAdminPinDisplay(String(data.adminPin ?? "").trim());
       setOwnerUid(String(data.ownerUid ?? ""));
       setRankingVisible(Boolean(data.rankingVisible));
       setEventStatus((data as { status?: string }).status === "closed" ? "closed" : "active");
@@ -296,9 +311,9 @@ export default function EventAdminPage({ params }: Props) {
   };
 
   const verifyGatePin = async () => {
-    const entered = gatePinInput.trim();
-    if (!entered) {
-      setGatePinError("PINを入力してください。");
+    const entered = filterAdminPinInput(gatePinInput);
+    if (!isValidFourDigitAdminPin(entered)) {
+      setGatePinError("4桁の数字を入力してください。");
       return;
     }
     if (!eventId) return;
@@ -316,7 +331,7 @@ export default function EventAdminPage({ params }: Props) {
         setGatePinError("このイベントには管理PINが設定されていません。");
         return;
       }
-      if (entered !== pinStored) {
+      if (entered !== pinStored.trim()) {
         setGatePinError("PINが違います");
         return;
       }
@@ -391,19 +406,21 @@ export default function EventAdminPage({ params }: Props) {
               イベント作成者のほか、管理PINを知っている方のみ入場できます。
             </p>
             <input
-              type="password"
+              type="text"
               inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
               autoComplete="off"
               value={gatePinInput}
               onChange={(e) => {
-                setGatePinInput(e.target.value);
+                setGatePinInput(filterAdminPinInput(e.target.value));
                 if (gatePinError) setGatePinError("");
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void verifyGatePin();
               }}
               className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
-              placeholder="PIN"
+              placeholder="例：1234"
               disabled={gatePinBusy}
             />
             {gatePinError ? (
@@ -455,6 +472,37 @@ export default function EventAdminPage({ params }: Props) {
             イベント終了
           </button>
         </header>
+
+        <section className="rounded-2xl border-4 border-slate-300 bg-white p-4 shadow-[0_8px_0_#94a3b8]">
+          <h2 className="text-lg font-extrabold text-zinc-900">認証情報の確認</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            運営画面のみ表示されます。作成者が忘れたときの確認用です。
+          </p>
+          <dl className="mt-3 space-y-3 text-sm">
+            <div>
+              <dt className="font-semibold text-zinc-700">イベント名</dt>
+              <dd className="mt-0.5 break-all font-medium text-zinc-900">{eventTitle || "—"}</dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-700">作成者名</dt>
+              <dd className="mt-0.5 break-all font-medium text-zinc-900">
+                {creatorNameDisplay || "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-700">参加用パスワード</dt>
+              <dd className="mt-0.5 break-all font-mono text-base font-bold text-zinc-900">
+                {joinPasswordDisplay || "（未設定）"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold text-zinc-700">管理用PIN</dt>
+              <dd className="mt-0.5 font-mono text-base font-bold tracking-widest text-zinc-900">
+                {adminPinDisplay || "—"}
+              </dd>
+            </div>
+          </dl>
+        </section>
 
         <section className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
           <h2 className="text-lg font-extrabold text-zinc-900">ランキング表示設定</h2>

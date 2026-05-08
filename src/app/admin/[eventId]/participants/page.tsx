@@ -17,6 +17,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { auth, db } from "../../../lib/firebase";
+import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../../lib/default-admin-pin";
 import { getAdminAccess, setAdminAccess } from "../../../lib/event-session";
 
@@ -181,9 +182,9 @@ export default function AdminParticipantsPage({ params }: Props) {
   }, [eventId, authReady, eventResolved, eventMissing, canManage]);
 
   const verifyGatePin = async () => {
-    const entered = gatePinInput.trim();
-    if (!entered) {
-      setGatePinError("PINを入力してください。");
+    const entered = filterAdminPinInput(gatePinInput);
+    if (!isValidFourDigitAdminPin(entered)) {
+      setGatePinError("4桁の数字を入力してください。");
       return;
     }
     if (!eventId) return;
@@ -195,7 +196,7 @@ export default function AdminParticipantsPage({ params }: Props) {
       if (!snap.exists()) return setGatePinError("イベントが見つかりません。");
       const pinStored = String((snap.data() as { adminPin?: unknown }).adminPin ?? "").trim();
       if (!pinStored) return setGatePinError("このイベントには管理PINが設定されていません。");
-      if (entered !== pinStored) return setGatePinError("PINが違います");
+      if (entered !== pinStored.trim()) return setGatePinError("PINが違います");
       setAdminAccess(eventId, true);
       setPinSession(true);
       setGatePinInput("");
@@ -341,19 +342,21 @@ export default function AdminParticipantsPage({ params }: Props) {
             <h1 className="text-xl font-black text-zinc-900">参加者管理</h1>
             <p className="mt-3 text-sm font-bold text-zinc-800">運営PINを入力してください</p>
             <input
-              type="password"
+              type="text"
               inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
               autoComplete="off"
               value={gatePinInput}
               onChange={(e) => {
-                setGatePinInput(e.target.value);
+                setGatePinInput(filterAdminPinInput(e.target.value));
                 if (gatePinError) setGatePinError("");
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void verifyGatePin();
               }}
               className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
-              placeholder="PIN"
+              placeholder="例：1234"
               disabled={gatePinBusy}
             />
             {gatePinError ? <p className="mt-2 text-sm font-semibold text-red-600">{gatePinError}</p> : null}

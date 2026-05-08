@@ -15,6 +15,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
 import {
   DEFAULT_MISSIONS_SEED,
@@ -283,9 +284,9 @@ export function EventMissions({ eventId }: Props) {
   };
 
   const verifyAdminPin = async () => {
-    const entered = adminPinInput.trim();
-    if (!entered) {
-      setAdminPinError("PINを入力してください。");
+    const entered = filterAdminPinInput(adminPinInput);
+    if (!isValidFourDigitAdminPin(entered)) {
+      setAdminPinError("4桁の数字を入力してください。");
       return;
     }
     setAdminPinBusy(true);
@@ -302,7 +303,7 @@ export function EventMissions({ eventId }: Props) {
         setAdminPinError("このイベントには管理PINが設定されていません。");
         return;
       }
-      if (entered !== pinStored) {
+      if (entered !== pinStored.trim()) {
         setAdminPinError("PINが違います");
         return;
       }
@@ -599,21 +600,23 @@ export function EventMissions({ eventId }: Props) {
             <h2 id="admin-pin-title" className="text-lg font-black text-zinc-900">
               運営PINを入力
             </h2>
-            <p className="mt-1 text-sm text-zinc-600">正しいPINが必要です。</p>
+            <p className="mt-1 text-sm text-zinc-600">4桁の管理用PINを入力してください。</p>
             <input
-              type="password"
+              type="text"
               inputMode="numeric"
+              pattern="\d{4}"
+              maxLength={4}
               autoComplete="off"
               value={adminPinInput}
               onChange={(e) => {
-                setAdminPinInput(e.target.value);
+                setAdminPinInput(filterAdminPinInput(e.target.value));
                 if (adminPinError) setAdminPinError("");
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void verifyAdminPin();
               }}
               className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
-              placeholder="PIN"
+              placeholder="例：1234"
               disabled={adminPinBusy}
             />
             {adminPinError ? (

@@ -222,15 +222,21 @@ export default function EventJoinPage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <form
+          lang="ja"
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm"
+        >
           <label className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-zinc-800">イベント名</span>
             <input
+              type="text"
               value={eventName}
               onChange={(e) => setEventName(e.target.value)}
               className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
               placeholder="参加するイベント名（候補から選ぶか入力）"
               autoComplete="off"
+              enterKeyHint="done"
               disabled={hasCodeInUrl}
             />
           </label>
@@ -258,23 +264,26 @@ export default function EventJoinPage() {
           <label className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-zinc-800">参加用パスワード</span>
             <input
-              type="password"
+              type="text"
               value={joinPasswordInput}
               onChange={(e) => setJoinPasswordInput(e.target.value)}
               className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
               placeholder="運営から共有されたパスワード"
               autoComplete="off"
+              enterKeyHint="done"
             />
           </label>
 
           <label className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-zinc-800">参加者名</span>
             <input
+              type="text"
               value={participantName}
               onChange={(e) => setParticipantName(e.target.value)}
               className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
               placeholder="表示される名前"
               autoComplete="off"
+              enterKeyHint="done"
             />
           </label>
           {message ? <p className="text-sm font-medium text-red-600">{message}</p> : null}
