@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { signInAnonymously } from "firebase/auth";
 import {
   collection,
@@ -26,12 +26,45 @@ function normalizeParticipantKey(name: string): string {
   return normalized || "guest";
 }
 
+type ActiveEventRow = { id: string; title: string; creatorName: string };
+
+type EventJoinFields = {
+  status?: string;
+  joinCode?: string;
+  joinUrl?: string;
+  joinPassword?: unknown;
+  title?: string;
+};
+
+function getStoredJoinPassword(data: EventJoinFields): string {
+  const raw = data.joinPassword;
+  if (typeof raw !== "string") return "";
+  return raw.trim();
+}
+
+function verifyJoinPassword(data: EventJoinFields, entered: string): { ok: true } | { ok: false; message: string } {
+  const stored = getStoredJoinPassword(data);
+  const input = entered.trim();
+  if (!stored) {
+    return { ok: true };
+  }
+  if (!input) {
+    return { ok: false, message: "参加用パスワードを入力してください。" };
+  }
+  if (input !== stored) {
+    return { ok: false, message: "参加用パスワードが違います" };
+  }
+  return { ok: true };
+}
+
 export default function EventJoinPage() {
   const router = useRouter();
   const [participantName, setParticipantName] = useState("");
   const [eventName, setEventName] = useState("");
+  const [joinPasswordInput, setJoinPasswordInput] = useState("");
   const [eventIdFromUrl, setEventIdFromUrl] = useState("");
   const [hasCodeInUrl, setHasCodeInUrl] = useState(false);
+  const [activeEvents, setActiveEvents] = useState<ActiveEventRow[]>([]);
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -45,6 +78,33 @@ export default function EventJoinPage() {
     setHasCodeInUrl(Boolean(code));
     if (eventId) setEventIdFromUrl(eventId);
   }, []);
+
+  useEffect(() => {
+    const load = async () => {
+      const snap = await getDocs(
+        query(collection(db, "events"), where("status", "==", "active")),
+      );
+      const rows = snap.docs.map((d) => {
+        const data = d.data() as { title?: string; creatorName?: string };
+        return {
+          id: d.id,
+          title: data.title?.trim() || "イベント",
+          creatorName: data.creatorName?.trim() || "未設定",
+        };
+      });
+      rows.sort((a, b) => a.title.localeCompare(b.title, "ja"));
+      setActiveEvents(rows);
+    };
+    void load();
+  }, []);
+
+  const suggestionEvents = useMemo(() => {
+    const q = eventName.trim().toLowerCase();
+    if (!q) return activeEvents.slice(0, 12);
+    return activeEvents
+      .filter((e) => e.title.toLowerCase().includes(q))
+      .slice(0, 12);
+  }, [activeEvents, eventName]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,14 +142,14 @@ export default function EventJoinPage() {
             return;
           }
           if (fallbackSnap.docs.length > 1) {
-            setMessage("同じ合言葉のイベントが複数あります。運営に確認してください。");
+            setMessage("同じ名前のイベントが複数あります。運営に確認してください。");
             setPending(false);
             return;
           }
           eventDoc = fallbackSnap.docs[0];
         } else {
           if (evSnap.docs.length > 1) {
-            setMessage("同じ合言葉のイベントが複数あります。運営に確認してください。");
+            setMessage("同じ名前のイベントが複数あります。運営に確認してください。");
             setPending(false);
             return;
           }
@@ -97,14 +157,22 @@ export default function EventJoinPage() {
         }
       }
       const eventId = eventDoc.id;
-      const eventData = eventDoc.data() as { status?: string; joinCode?: string; joinUrl?: string };
+      const eventData = eventDoc.data() as EventJoinFields;
       if (eventData.status === "closed") {
         setMessage("このイベントは終了しました。新規参加はできません。");
         setPending(false);
         return;
       }
+
+      const pwCheck = verifyJoinPassword(eventData, joinPasswordInput);
+      if (!pwCheck.ok) {
+        setMessage(pwCheck.message);
+        setPending(false);
+        return;
+      }
+
       if (!eventData.joinCode || !eventData.joinUrl) {
-        const joinCode = (eventData.joinCode?.trim() || (eventData as { title?: string }).title?.trim() || "").trim();
+        const joinCode = (eventData.joinCode?.trim() || eventData.title?.trim() || "").trim();
         const joinUrl =
           typeof window !== "undefined"
             ? `${window.location.origin}/join?code=${encodeURIComponent(joinCode)}`
@@ -150,7 +218,7 @@ export default function EventJoinPage() {
           </Link>
           <h1 className="mt-3 text-2xl font-black text-zinc-900">イベント参加</h1>
           <p className="mt-1 text-sm text-zinc-600">
-            イベント名と参加者名で参加できます。同じ入力で途中から再開できます。
+            イベント名・参加用パスワード・参加者名で参加できます。同じ入力で途中から再開できます。
           </p>
         </div>
 
@@ -161,11 +229,44 @@ export default function EventJoinPage() {
               value={eventName}
               onChange={(e) => setEventName(e.target.value)}
               className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
-              placeholder="参加するイベント名"
+              placeholder="参加するイベント名（候補から選ぶか入力）"
               autoComplete="off"
               disabled={hasCodeInUrl}
             />
           </label>
+
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+            <p className="text-xs font-semibold text-zinc-700">開催中の候補（タップで入力）</p>
+            <div className="mt-2 flex max-h-44 flex-col gap-2 overflow-y-auto">
+              {suggestionEvents.map((ev) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => setEventName(ev.title)}
+                  className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left shadow-sm active:bg-zinc-50"
+                >
+                  <span className="block text-sm font-bold text-zinc-900">{ev.title}</span>
+                  <span className="text-xs text-zinc-600">作成者: {ev.creatorName}</span>
+                </button>
+              ))}
+              {suggestionEvents.length === 0 ? (
+                <p className="text-xs text-zinc-500">一致する開催中イベントがありません。手入力してください。</p>
+              ) : null}
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-semibold text-zinc-800">参加用パスワード</span>
+            <input
+              type="password"
+              value={joinPasswordInput}
+              onChange={(e) => setJoinPasswordInput(e.target.value)}
+              className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
+              placeholder="運営から共有されたパスワード"
+              autoComplete="off"
+            />
+          </label>
+
           <label className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-zinc-800">参加者名</span>
             <input

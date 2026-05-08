@@ -13,6 +13,7 @@ export default function EventCreatePage() {
   const [title, setTitle] = useState("");
   const [creatorName, setCreatorName] = useState("");
   const [adminPin, setAdminPin] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -21,8 +22,9 @@ export default function EventCreatePage() {
     const t = title.trim();
     const creator = creatorName.trim();
     const pin = adminPin.trim();
-    if (!t || !creator || !pin) {
-      setMessage("イベント名・作成者名・管理用パスワードを入力してください。");
+    const joinPw = joinPassword.trim();
+    if (!t || !creator || !pin || !joinPw) {
+      setMessage("イベント名・作成者名・管理用パスワード・参加用パスワードを入力してください。");
       return;
     }
 
@@ -43,6 +45,7 @@ export default function EventCreatePage() {
         joinCode,
         joinUrl,
         adminPin: pin,
+        joinPassword: joinPw,
         ownerUid: authUid,
         status: "active",
         rankingVisible: true,
@@ -74,7 +77,7 @@ export default function EventCreatePage() {
           </Link>
           <h1 className="mt-3 text-2xl font-black text-zinc-900">イベント作成</h1>
           <p className="mt-1 text-sm text-zinc-600">
-            イベント名・作成者名・管理用パスワードを設定します。
+            イベント名・作成者・運営用と参加用のパスワードを設定します。
           </p>
         </div>
 
@@ -109,7 +112,20 @@ export default function EventCreatePage() {
               autoComplete="off"
             />
             <span className="text-xs text-zinc-500">
-              「運営画面へ」で入力します。参加者画面にはこのPINは表示されません。
+              「運営画面」で入力します。参加者には表示されません。
+            </span>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm font-semibold text-zinc-800">参加用パスワード</span>
+            <input
+              value={joinPassword}
+              onChange={(e) => setJoinPassword(e.target.value)}
+              className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
+              placeholder="参加者が入力するパスワード"
+              autoComplete="off"
+            />
+            <span className="text-xs text-zinc-500">
+              参加者がイベントに参加するときに必要です。管理用パスワードとは別にしてください。
             </span>
           </label>
           {message ? <p className="text-sm font-medium text-red-600">{message}</p> : null}
