@@ -57,8 +57,8 @@ export default function HomePage() {
     <div className="min-h-screen bg-zinc-100 p-6">
       <main className="mx-auto flex w-full max-w-md flex-col gap-8 pt-12">
         <div className="text-center">
-          <h1 className="text-3xl font-black tracking-tight text-zinc-900">ポイント記録</h1>
-          <p className="mt-2 text-sm text-zinc-600">イベント作成・参加・開催中イベント確認ができます。</p>
+          <h1 className="text-3xl font-black tracking-tight text-zinc-900">イベントチャレンジ</h1>
+          <p className="mt-2 text-sm text-zinc-600">イベント作成・参加ができます。</p>
         </div>
 
         <div className="flex flex-col gap-4">
