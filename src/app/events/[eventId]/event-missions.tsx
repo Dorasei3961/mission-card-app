@@ -454,41 +454,50 @@ export function EventMissions({ eventId }: Props) {
     <div className="min-h-screen bg-gradient-to-b from-yellow-100 via-orange-100 to-red-100 p-4">
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
         <nav
-          className="flex flex-wrap items-center gap-2 rounded-2xl border-2 border-amber-200 bg-white/95 p-3 shadow-sm"
+          className="flex items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-2.5 py-2 shadow-sm"
           aria-label="イベント内ナビゲーション"
         >
           <button
             type="button"
             onClick={() => goToTop()}
-            className="inline-flex min-h-[44px] flex-1 basis-[30%] items-center justify-center rounded-full bg-zinc-500 px-3 py-2 text-sm font-bold text-white shadow-[0_4px_0_#3f3f46] touch-manipulation active:translate-y-px active:shadow-none sm:flex-none sm:basis-auto"
+            className="inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-zinc-800 hover:bg-zinc-50"
           >
-            トップへ戻る
+            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-sm">
+              ←
+            </span>
+            <span className="truncate text-sm font-bold">{eventTitle || "イベント"}</span>
           </button>
-          {showRankingLink ? (
-            <Link
-              href={`/events/${eventId}/ranking`}
-              className="inline-flex min-h-[44px] flex-1 basis-[30%] items-center justify-center rounded-full bg-violet-500 px-3 py-2 text-sm font-bold text-white shadow-[0_4px_0_#6d28d9] touch-manipulation active:translate-y-px active:shadow-none sm:flex-none sm:basis-auto"
-            >
-              ランキング
-            </Link>
-          ) : null}
-          {canUseMissions && featureMissionEnabled ? (
-            <Link
-              href={`/events/${eventId}/features`}
-              className="inline-flex min-h-[44px] flex-1 basis-[30%] items-center justify-center rounded-full bg-fuchsia-500 px-3 py-2 text-sm font-bold text-white shadow-[0_4px_0_#a21caf] touch-manipulation active:translate-y-px active:shadow-none sm:flex-none sm:basis-auto"
-            >
-              イベント機能
-            </Link>
-          ) : null}
-          {canUseMissions ? (
-            <button
-              type="button"
-              onClick={() => void openAdminFlow()}
-              className="inline-flex min-h-[44px] flex-1 basis-[30%] items-center justify-center rounded-full bg-blue-500 px-3 py-2 text-sm font-bold text-white shadow-[0_4px_0_#1d4ed8] touch-manipulation active:translate-y-px active:shadow-none sm:flex-none sm:basis-auto"
-            >
-              運営画面
-            </button>
-          ) : null}
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            {showRankingLink ? (
+              <Link
+                href={`/events/${eventId}/ranking`}
+                className="inline-flex h-11 w-14 flex-col items-center justify-center rounded-lg border border-zinc-200 bg-white text-[10px] font-semibold text-zinc-700 shadow-sm"
+              >
+                <span className="text-sm leading-none">🏆</span>
+                <span className="mt-0.5 leading-none">ランキング</span>
+              </Link>
+            ) : null}
+            {canUseMissions && featureMissionEnabled ? (
+              <Link
+                href={`/events/${eventId}/features`}
+                className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-fuchsia-200 bg-fuchsia-50 text-[10px] font-semibold text-fuchsia-700 shadow-sm"
+              >
+                <span className="text-sm leading-none">🎮</span>
+                <span className="mt-0.5 leading-none">機能</span>
+              </Link>
+            ) : null}
+            {canUseMissions ? (
+              <button
+                type="button"
+                onClick={() => void openAdminFlow()}
+                className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-[10px] font-semibold text-sky-700 shadow-sm"
+              >
+                <span className="text-sm leading-none">⚙</span>
+                <span className="mt-0.5 leading-none">管理</span>
+              </button>
+            ) : null}
+          </div>
         </nav>
 
         <header className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
