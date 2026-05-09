@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { filterAdminPinInput, isValidFourDigitAdminPin } from "@/app/lib/admin-pin";
-import type { OwnerEventListItem } from "@/app/lib/owner-types";
-import { OWNER_PIN_HEADER } from "@/app/lib/owner-pin-header";
+import { filterAdminPinInput, isValidFourDigitAdminPin } from "../lib/admin-pin";
+import type { OwnerEventListItem } from "../lib/owner-types";
+import { OWNER_PIN_HEADER } from "../lib/owner-pin-header";
 
-/** オーナーPINの保存キー（localStorage）。将来はセッション/JWT等へ差し替え可能。 */
+/** ログイン済みPINを保持する localStorage キー */
 const LOCAL_STORAGE_OWNER_PIN_KEY = "mission_owner_pin_v1";
 
 function formatJaDate(iso: string | null): string {
@@ -20,7 +20,7 @@ function formatJaDate(iso: string | null): string {
   }
 }
 
-export default function OwnerDashboardPage() {
+export default function OwnerPage() {
   const expectedPin = process.env.NEXT_PUBLIC_OWNER_PIN ?? "";
 
   const [authChecked, setAuthChecked] = useState(false);
@@ -37,30 +37,27 @@ export default function OwnerDashboardPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState("");
 
-  const loadEvents = useCallback(
-    async (pin: string) => {
-      setListLoading(true);
-      setListError("");
-      try {
-        const res = await fetch("/api/owner/events", {
-          headers: { [OWNER_PIN_HEADER]: pin },
-        });
-        const data = (await res.json()) as { events?: OwnerEventListItem[]; error?: string };
-        if (!res.ok) {
-          setListError(data.error ?? "一覧の取得に失敗しました");
-          setEvents([]);
-          return;
-        }
-        setEvents(data.events ?? []);
-      } catch {
-        setListError("一覧の取得に失敗しました");
+  const loadEvents = useCallback(async (pin: string) => {
+    setListLoading(true);
+    setListError("");
+    try {
+      const res = await fetch("/api/owner/events", {
+        headers: { [OWNER_PIN_HEADER]: pin },
+      });
+      const data = (await res.json()) as { events?: OwnerEventListItem[]; error?: string };
+      if (!res.ok) {
+        setListError(data.error ?? "一覧の取得に失敗しました");
         setEvents([]);
-      } finally {
-        setListLoading(false);
+        return;
       }
-    },
-    [],
-  );
+      setEvents(data.events ?? []);
+    } catch {
+      setListError("一覧の取得に失敗しました");
+      setEvents([]);
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -212,10 +209,16 @@ export default function OwnerDashboardPage() {
             <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Owner</p>
             <h1 className="mt-2 text-2xl font-black">オーナー管理</h1>
             <p className="mt-2 text-sm text-zinc-400">
-              この画面は公開リンクではありません。PIN を入力してください。
+              PIN を入力してログインしてください。保存されたPINは localStorage にあります。
             </p>
           </div>
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5">
+          <form
+            className="rounded-2xl border border-zinc-800 bg-zinc-900 p-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleUnlock();
+            }}
+          >
             <label className="flex flex-col gap-2">
               <span className="text-sm font-semibold text-zinc-200">オーナーPIN</span>
               <input
@@ -230,13 +233,12 @@ export default function OwnerDashboardPage() {
             </label>
             {gateError ? <p className="mt-2 text-sm font-semibold text-red-400">{gateError}</p> : null}
             <button
-              type="button"
-              onClick={handleUnlock}
+              type="submit"
               className="mt-4 w-full rounded-xl bg-indigo-600 py-3 text-base font-bold text-white active:bg-indigo-700"
             >
               ログイン
             </button>
-          </div>
+          </form>
         </main>
       </div>
     );
@@ -260,7 +262,7 @@ export default function OwnerDashboardPage() {
             </button>
           </div>
           <p className="text-xs leading-relaxed text-zinc-600">
-            イベント全体の検査・停止・削除ができます。サービスアカウント（FIREBASE_SERVICE_ACCOUNT_JSON）がサーバーに設定されている必要があります。
+            一覧取得・削除にはサーバー側の Firebase Admin（環境変数 FIREBASE_SERVICE_ACCOUNT_JSON）が必要です。
           </p>
           {listError ? (
             <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">{listError}</p>
@@ -272,7 +274,7 @@ export default function OwnerDashboardPage() {
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-lg font-black text-zinc-900">全イベント</h2>
+            <h2 className="text-lg font-black text-zinc-900">イベント一覧</h2>
             <button
               type="button"
               disabled={listLoading || !sessionPin}
@@ -296,12 +298,8 @@ export default function OwnerDashboardPage() {
                 <div className="flex flex-wrap items-start justify-between gap-2 border-b border-zinc-100 pb-3">
                   <div className="min-w-0 flex-1">
                     <h3 className="break-words text-base font-black text-zinc-900">{ev.title || "（無題）"}</h3>
-                    <p className="mt-1 text-xs text-zinc-600">
-                      作成者: {ev.creatorName}
-                    </p>
-                    <p className="mt-0.5 text-xs text-zinc-500">
-                      作成: {formatJaDate(ev.createdAtIso)}
-                    </p>
+                    <p className="mt-1 text-xs text-zinc-600">作成者: {ev.creatorName}</p>
+                    <p className="mt-0.5 text-xs text-zinc-500">作成: {formatJaDate(ev.createdAtIso)}</p>
                   </div>
                   <span
                     className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
@@ -315,10 +313,6 @@ export default function OwnerDashboardPage() {
                 </div>
 
                 <dl className="mt-3 grid gap-2 text-sm">
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-zinc-500">参加者数</dt>
-                    <dd className="font-bold text-zinc-900">{ev.participantCount}</dd>
-                  </div>
                   <div className="flex flex-col gap-1">
                     <dt className="text-zinc-500">参加用パスワード</dt>
                     <dd className="break-all font-mono text-sm font-semibold text-zinc-900">
@@ -327,7 +321,9 @@ export default function OwnerDashboardPage() {
                   </div>
                   <div className="flex flex-col gap-1">
                     <dt className="text-zinc-500">管理用PIN</dt>
-                    <dd className="font-mono text-base font-bold tracking-widest text-zinc-900">{ev.adminPin || "—"}</dd>
+                    <dd className="font-mono text-base font-bold tracking-widest text-zinc-900">
+                      {ev.adminPin || "—"}
+                    </dd>
                   </div>
                   <div className="pt-1">
                     <dt className="text-xs text-zinc-500">イベントID</dt>
@@ -414,21 +410,6 @@ export default function OwnerDashboardPage() {
           {!listLoading && events.length === 0 && !listError ? (
             <p className="mt-4 text-sm text-zinc-600">イベントがありません。</p>
           ) : null}
-        </section>
-
-        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-black text-zinc-900">問い合わせ管理</h2>
-          <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-            将来的に問い合わせ一覧をここに表示する前提のプレースホルダーです。
-          </p>
-          <div className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4">
-            <p className="text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
-              問い合わせ一覧
-            </p>
-            <div className="mt-3 flex min-h-[100px] items-center justify-center rounded-lg bg-white text-sm font-semibold text-zinc-400 shadow-inner">
-              データ未接続（今後ここに一覧を表示）
-            </div>
-          </div>
         </section>
       </main>
     </div>
