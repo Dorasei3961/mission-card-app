@@ -134,6 +134,23 @@ service cloud.firestore {
         allow read: if true;
         allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
       }
+
+      // クイズ（運営=owner が編集、全員閲覧可）
+      match /quizzes/{quizId} {
+        allow read: if true;
+        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+      }
+
+      // クイズ回答（作成のみ・本人の participantId）
+      match /quizAnswers/{answerId} {
+        allow read: if true;
+        allow create: if isSignedIn()
+          && isEventActive(eventId)
+          && request.resource.data.participantId == request.auth.uid
+          && request.resource.data.quizId is string
+          && request.resource.data.selectedIndex is int;
+        allow update, delete: if false;
+      }
     }
 
     // users は本人のみ

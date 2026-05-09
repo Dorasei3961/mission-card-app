@@ -29,6 +29,7 @@ import {
   setEventSession,
 } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
+import { EventQuiz } from "./features/event-quiz";
 
 function parseCheckedMissionIdsFromFirestore(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -87,6 +88,9 @@ export function EventMissions({ eventId }: Props) {
   const [adminPinError, setAdminPinError] = useState("");
   const [adminPinBusy, setAdminPinBusy] = useState(false);
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
+  const [featureQuizEnabled, setFeatureQuizEnabled] = useState(false);
+  /** participants.totalPoints（ミッション保存・クイズ加点と同期） */
+  const [liveParticipantTotalPts, setLiveParticipantTotalPts] = useState<number | null>(null);
 
   const visibleMissions = useMemo(
     () =>
@@ -126,7 +130,9 @@ export function EventMissions({ eventId }: Props) {
       setEventTitle(String(data.title ?? "イベント"));
       setRankingVisible(Boolean(data.rankingVisible));
       setIsClosed(data.status === "closed");
-      setFeatureMissionEnabled(resolveEventFeatures(data.features).mission);
+      const rf = resolveEventFeatures(data.features);
+      setFeatureMissionEnabled(rf.mission);
+      setFeatureQuizEnabled(rf.quiz);
     });
 
     return () => unsubEvent();
@@ -166,7 +172,9 @@ export function EventMissions({ eventId }: Props) {
         setEventTitle(String(eventData.title ?? "イベント"));
         setRankingVisible(Boolean(eventData.rankingVisible));
         setIsClosed(eventData.status === "closed");
-        setFeatureMissionEnabled(resolveEventFeatures(eventData.features).mission);
+        const rf = resolveEventFeatures(eventData.features);
+        setFeatureMissionEnabled(rf.mission);
+        setFeatureQuizEnabled(rf.quiz);
 
         const participantRef = doc(db, "events", eventId, "participants", participantKey);
         const participantSnap = await getDoc(participantRef);
@@ -267,6 +275,22 @@ export function EventMissions({ eventId }: Props) {
 
     return () => unsub();
   }, [eventId]);
+
+  useEffect(() => {
+    if (!userId || !canUseMissions) {
+      setLiveParticipantTotalPts(null);
+      return;
+    }
+    const unsub = onSnapshot(doc(db, "events", eventId, "participants", userId), (snap) => {
+      if (!snap.exists()) {
+        setLiveParticipantTotalPts(null);
+        return;
+      }
+      const t = snap.data()?.totalPoints;
+      setLiveParticipantTotalPts(typeof t === "number" && Number.isFinite(t) ? t : 0);
+    });
+    return () => unsub();
+  }, [eventId, userId, canUseMissions]);
 
   useEffect(() => {
     const checkboxIds = new Set(
@@ -408,11 +432,17 @@ export function EventMissions({ eventId }: Props) {
           { merge: true },
         );
 
+        const participantRefForPts = doc(db, "events", eventId, "participants", userId);
+        const participantSnapForPts = await getDoc(participantRefForPts);
+        const quizPtsRaw = participantSnapForPts.data()?.quizPoints;
+        const quizPts = typeof quizPtsRaw === "number" && Number.isFinite(quizPtsRaw) ? quizPtsRaw : 0;
+        const grandTotal = computedTotal + quizPts;
+
         await setDoc(
-          doc(db, "events", eventId, "participants", userId),
+          participantRefForPts,
           {
             name: participantName,
-            totalPoints: computedTotal,
+            totalPoints: grandTotal,
             completedCount,
             updatedAt: serverTimestamp(),
           },
@@ -422,7 +452,7 @@ export function EventMissions({ eventId }: Props) {
         await setDoc(
           doc(db, "users", userId),
           {
-            totalPoints: computedTotal,
+            totalPoints: grandTotal,
             updatedAt: serverTimestamp(),
           },
           { merge: true },
@@ -490,7 +520,7 @@ export function EventMissions({ eventId }: Props) {
                 <span className="mt-0.5 leading-none">ランキング</span>
               </Link>
             ) : null}
-            {canUseMissions && featureMissionEnabled ? (
+            {canUseMissions && (featureMissionEnabled || featureQuizEnabled) ? (
               <Link
                 href={`/events/${eventId}/features?from=participant`}
                 className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-fuchsia-200 bg-fuchsia-50 text-[10px] font-semibold text-fuchsia-700 shadow-sm"
@@ -530,7 +560,8 @@ export function EventMissions({ eventId }: Props) {
         <header className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
           <p className="text-sm font-semibold text-amber-700">{eventTitle || "イベント"}</p>
           <h1 className="text-2xl font-black tracking-wide text-zinc-900">
-            {participantName || "参加者"}さんの合計ポイント: {totalPoints} pt
+            {participantName || "参加者"}さんの合計ポイント:{" "}
+            {(liveParticipantTotalPts ?? totalPoints).toLocaleString("ja-JP")} pt
           </h1>
           <p className="mt-1 text-xs text-zinc-600">記録した内容から自動計算された合計です。</p>
           {isClosed ? (
@@ -634,7 +665,7 @@ export function EventMissions({ eventId }: Props) {
                   <p className="text-center text-lg font-black text-emerald-600">+{linePoints} pt</p>
                 </div>
               );
-            }) : (
+            }            ) : (
               <article className="rounded-2xl border-4 border-zinc-300 bg-white p-4 shadow-[0_8px_0_#a1a1aa]">
                 <h2 className="text-lg font-black text-zinc-900">ミッション機能は無効です</h2>
                 <p className="mt-2 text-sm text-zinc-600">
@@ -642,6 +673,11 @@ export function EventMissions({ eventId }: Props) {
                 </p>
               </article>
             )}
+            {featureQuizEnabled ? (
+              <div className="mt-2">
+                <EventQuiz eventId={eventId} />
+              </div>
+            ) : null}
           </section>
         ) : null}
       </main>
