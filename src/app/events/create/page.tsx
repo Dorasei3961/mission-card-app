@@ -9,6 +9,7 @@ import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { buildCreatorFooterSupportMailtoHref } from "../../lib/contact-mail";
 import { DEFAULT_EVENT_FEATURES } from "../../lib/event-features";
+import { DEFAULT_MISSIONS_SEED } from "../../lib/mission-schema";
 import { setEventSession } from "../../lib/event-session";
 
 type CreatedSummary = {
@@ -72,6 +73,16 @@ export default function EventCreatePage() {
         createdAt: serverTimestamp(),
       });
       const eventId = ref.id;
+      await Promise.all(
+        DEFAULT_MISSIONS_SEED.map((mission) =>
+          setDoc(doc(db, "events", eventId, "missions", String(mission.id)), {
+            ...mission,
+            eventId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }),
+        ),
+      );
       const ownerKey = "host";
       await setDoc(doc(db, "events", eventId, "participants", ownerKey), {
         name: creator,

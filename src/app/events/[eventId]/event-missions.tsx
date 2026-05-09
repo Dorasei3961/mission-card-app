@@ -192,20 +192,27 @@ export function EventMissions({ eventId }: Props) {
           setEventSession({ eventId, participantName: name, uid: participantKey });
         }
 
-        const missionsRef = collection(db, "missions");
-        const missionSnap = await getDocs(missionsRef);
+        const missionsRef = collection(db, "events", eventId, "missions");
+        let missionSnap = await getDocs(missionsRef);
 
         if (missionSnap.empty) {
           await Promise.all(
             DEFAULT_MISSIONS_SEED.map((mission) =>
-              setDoc(doc(db, "missions", String(mission.id)), {
+              setDoc(doc(db, "events", eventId, "missions", String(mission.id)), {
                 ...mission,
+                eventId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
               }),
             ),
           );
-          setMissions(DEFAULT_MISSIONS_SEED);
+          missionSnap = await getDocs(missionsRef);
+          const missionList = missionSnap.docs
+            .map((missionDoc) =>
+              normalizeMissionFromFirestore(missionDoc.id, missionDoc.data() as Record<string, unknown>),
+            )
+            .sort((a, b) => a.order - b.order || a.id - b.id);
+          setMissions(missionList);
         } else {
           const missionList = missionSnap.docs
             .map((missionDoc) =>
@@ -474,7 +481,16 @@ export function EventMissions({ eventId }: Props) {
                 href={`/events/${eventId}/ranking`}
                 className="inline-flex h-11 w-14 flex-col items-center justify-center rounded-lg border border-zinc-200 bg-white text-[10px] font-semibold text-zinc-700 shadow-sm"
               >
-                <span className="text-sm leading-none">🏆</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+                  <path
+                    d="M8 4h8v2a4 4 0 0 0 4 4v1a5 5 0 0 1-5 5h-1v2h3v2H7v-2h3v-2H9a5 5 0 0 1-5-5V10a4 4 0 0 0 4-4V4Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
                 <span className="mt-0.5 leading-none">ランキング</span>
               </Link>
             ) : null}
@@ -483,7 +499,12 @@ export function EventMissions({ eventId }: Props) {
                 href={`/events/${eventId}/features`}
                 className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-fuchsia-200 bg-fuchsia-50 text-[10px] font-semibold text-fuchsia-700 shadow-sm"
               >
-                <span className="text-sm leading-none">🎮</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+                  <rect x="4" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
+                  <rect x="14" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
+                  <rect x="4" y="14" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
+                  <rect x="14" y="14" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
+                </svg>
                 <span className="mt-0.5 leading-none">機能</span>
               </Link>
             ) : null}
@@ -493,7 +514,17 @@ export function EventMissions({ eventId }: Props) {
                 onClick={() => void openAdminFlow()}
                 className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-[10px] font-semibold text-sky-700 shadow-sm"
               >
-                <span className="text-sm leading-none">⚙</span>
+                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
+                  <path
+                    d="m12 3 1.4 1.8 2.2.4.9 2 2 1-.4 2.2 1.8 1.6-1.8 1.6.4 2.2-2 1-.9 2-2.2.4L12 21l-1.4-1.8-2.2-.4-.9-2-2-1 .4-2.2L4.1 12l1.8-1.6-.4-2.2 2-1 .9-2 2.2-.4L12 3Z"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
                 <span className="mt-0.5 leading-none">管理</span>
               </button>
             ) : null}

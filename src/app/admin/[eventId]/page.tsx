@@ -19,6 +19,7 @@ import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
 import { resolveEventFeatures } from "../../lib/event-features";
 import { getAdminAccess, setAdminAccess } from "../../lib/event-session";
 import {
+  DEFAULT_MISSIONS_SEED,
   type MissionFields,
   type MissionKind,
   normalizeMissionFromFirestore,
@@ -159,7 +160,22 @@ export default function EventAdminPage({ params }: Props) {
   }, [eventId, canManage, joinCode, joinUrl]);
 
   const loadMissions = async () => {
-    const snapshot = await getDocs(collection(db, "missions"));
+    if (!eventId) return;
+    const missionColl = collection(db, "events", eventId, "missions");
+    let snapshot = await getDocs(missionColl);
+    if (snapshot.empty) {
+      await Promise.all(
+        DEFAULT_MISSIONS_SEED.map((mission) =>
+          setDoc(doc(db, "events", eventId, "missions", String(mission.id)), {
+            ...mission,
+            eventId,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }),
+        ),
+      );
+      snapshot = await getDocs(missionColl);
+    }
     const missionList = snapshot.docs
       .map((missionDoc) => ({
         docId: missionDoc.id,
@@ -245,7 +261,10 @@ export default function EventAdminPage({ params }: Props) {
       payload.pointPerUnit = parsedPerUnit;
       payload.unitLabel = "";
     }
-    await setDoc(doc(db, "missions", String(id)), payload);
+    await setDoc(doc(db, "events", eventId, "missions", String(id)), {
+      ...payload,
+      eventId,
+    });
     setTitle("");
     setDescription("");
     setCategory("");
@@ -285,14 +304,14 @@ export default function EventAdminPage({ params }: Props) {
       payload.points = 0;
       payload.pointPerUnit = mission.pointPerUnit;
     }
-    await setDoc(doc(db, "missions", mission.docId), payload, { merge: true });
+    await setDoc(doc(db, "events", eventId, "missions", mission.docId), payload, { merge: true });
     setMessage("更新しました。");
     await loadMissions();
   };
 
   const handleDeleteMission = async (docId: string) => {
     if (!canEdit) return;
-    await deleteDoc(doc(db, "missions", docId));
+    await deleteDoc(doc(db, "events", eventId, "missions", docId));
     setMessage("削除しました。");
     await loadMissions();
   };
@@ -308,7 +327,11 @@ export default function EventAdminPage({ params }: Props) {
     setMissions(next);
     await Promise.all(
       next.map((m, i) =>
-        setDoc(doc(db, "missions", m.docId), { order: i + 1, updatedAt: serverTimestamp() }, { merge: true }),
+        setDoc(
+          doc(db, "events", eventId, "missions", m.docId),
+          { order: i + 1, updatedAt: serverTimestamp() },
+          { merge: true },
+        ),
       ),
     );
     setMessage("並び順を更新しました。");
