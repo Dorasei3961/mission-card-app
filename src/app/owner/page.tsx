@@ -5,7 +5,8 @@ import { filterAdminPinInput, isValidFourDigitAdminPin } from "@/app/lib/admin-p
 import type { OwnerEventListItem } from "@/app/lib/owner-types";
 import { OWNER_PIN_HEADER } from "@/app/lib/owner-pin-header";
 
-const SESSION_PIN_KEY = "mission_owner_pin_v1";
+/** オーナーPINの保存キー（localStorage）。将来はセッション/JWT等へ差し替え可能。 */
+const LOCAL_STORAGE_OWNER_PIN_KEY = "mission_owner_pin_v1";
 
 function formatJaDate(iso: string | null): string {
   if (!iso) return "—";
@@ -22,6 +23,7 @@ function formatJaDate(iso: string | null): string {
 export default function OwnerDashboardPage() {
   const expectedPin = process.env.NEXT_PUBLIC_OWNER_PIN ?? "";
 
+  const [authChecked, setAuthChecked] = useState(false);
   const [gatePin, setGatePin] = useState("");
   const [gateError, setGateError] = useState("");
   const [unlocked, setUnlocked] = useState(false);
@@ -62,12 +64,16 @@ export default function OwnerDashboardPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!expectedPin) return;
-    const stored = sessionStorage.getItem(SESSION_PIN_KEY);
+    if (!expectedPin) {
+      setAuthChecked(true);
+      return;
+    }
+    const stored = localStorage.getItem(LOCAL_STORAGE_OWNER_PIN_KEY);
     if (stored && stored === expectedPin) {
       setSessionPin(stored);
       setUnlocked(true);
     }
+    setAuthChecked(true);
   }, [expectedPin]);
 
   useEffect(() => {
@@ -85,14 +91,14 @@ export default function OwnerDashboardPage() {
       setGateError("PINが正しくありません");
       return;
     }
-    sessionStorage.setItem(SESSION_PIN_KEY, gatePin);
+    localStorage.setItem(LOCAL_STORAGE_OWNER_PIN_KEY, gatePin);
     setSessionPin(gatePin);
     setUnlocked(true);
     setGatePin("");
   };
 
   const handleLogout = () => {
-    sessionStorage.removeItem(SESSION_PIN_KEY);
+    localStorage.removeItem(LOCAL_STORAGE_OWNER_PIN_KEY);
     setUnlocked(false);
     setSessionPin(null);
     setEvents([]);
@@ -177,6 +183,14 @@ export default function OwnerDashboardPage() {
       ...(hasPin ? { adminPin: adminPinRaw!.trim() } : {}),
     });
   };
+
+  if (!authChecked) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-zinc-950 p-4">
+        <p className="text-sm text-zinc-400">読み込み中…</p>
+      </div>
+    );
+  }
 
   if (!expectedPin) {
     return (
@@ -402,13 +416,18 @@ export default function OwnerDashboardPage() {
           ) : null}
         </section>
 
-        <section className="rounded-2xl border border-dashed border-zinc-300 bg-white p-5">
-          <h2 className="text-lg font-black text-zinc-900">問い合わせ確認</h2>
+        <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-black text-zinc-900">問い合わせ管理</h2>
           <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-            将来的に問い合わせ一覧（Firestore / メールログ等）をここに表示する前提のプレースホルダーです。
+            将来的に問い合わせ一覧をここに表示する前提のプレースホルダーです。
           </p>
-          <div className="mt-4 flex min-h-[120px] items-center justify-center rounded-xl bg-zinc-50 text-sm font-semibold text-zinc-400">
-            一覧エリア（未接続）
+          <div className="mt-4 rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-4">
+            <p className="text-center text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              問い合わせ一覧
+            </p>
+            <div className="mt-3 flex min-h-[100px] items-center justify-center rounded-lg bg-white text-sm font-semibold text-zinc-400 shadow-inner">
+              データ未接続（今後ここに一覧を表示）
+            </div>
           </div>
         </section>
       </main>

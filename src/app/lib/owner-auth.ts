@@ -2,6 +2,7 @@
  * アプリ全体オーナー（裏管理）向け認証の境界。
  *
  * 現在: 環境変数 NEXT_PUBLIC_OWNER_PIN（クライアントで入力検証）+
+ * 認証状態は localStorage に保存（/owner のゲート用）+
  * API ルートでの同一 PIN 検証 + Firebase Admin（Firestore 全体操作）。
  *
  * 将来 Google ログインへ移行する場合のメモ:
