@@ -29,6 +29,7 @@ import {
   setAdminAccess,
   setEventSession,
 } from "../../lib/event-session";
+import { resolveEventFeatures } from "../../lib/event-features";
 
 function parseCheckedMissionIdsFromFirestore(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -86,6 +87,7 @@ export function EventMissions({ eventId }: Props) {
   const [adminPinInput, setAdminPinInput] = useState("");
   const [adminPinError, setAdminPinError] = useState("");
   const [adminPinBusy, setAdminPinBusy] = useState(false);
+  const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
 
   const visibleMissions = useMemo(
     () =>
@@ -120,10 +122,12 @@ export function EventMissions({ eventId }: Props) {
         rankingVisible?: boolean;
         ownerUid?: string;
         status?: string;
+        features?: unknown;
       };
       setEventTitle(String(data.title ?? "イベント"));
       setRankingVisible(Boolean(data.rankingVisible));
       setIsClosed(data.status === "closed");
+      setFeatureMissionEnabled(resolveEventFeatures(data.features).mission);
     });
 
     return () => unsubEvent();
@@ -158,10 +162,12 @@ export function EventMissions({ eventId }: Props) {
           rankingVisible?: boolean;
           ownerUid?: string;
           status?: string;
+          features?: unknown;
         };
         setEventTitle(String(eventData.title ?? "イベント"));
         setRankingVisible(Boolean(eventData.rankingVisible));
         setIsClosed(eventData.status === "closed");
+        setFeatureMissionEnabled(resolveEventFeatures(eventData.features).mission);
 
         const participantRef = doc(db, "events", eventId, "participants", participantKey);
         const participantSnap = await getDoc(participantRef);
@@ -466,6 +472,14 @@ export function EventMissions({ eventId }: Props) {
               ランキング
             </Link>
           ) : null}
+          {canUseMissions && featureMissionEnabled ? (
+            <Link
+              href={`/events/${eventId}/features`}
+              className="inline-flex min-h-[44px] flex-1 basis-[30%] items-center justify-center rounded-full bg-fuchsia-500 px-3 py-2 text-sm font-bold text-white shadow-[0_4px_0_#a21caf] touch-manipulation active:translate-y-px active:shadow-none sm:flex-none sm:basis-auto"
+            >
+              イベント機能
+            </Link>
+          ) : null}
           {canUseMissions ? (
             <button
               type="button"
@@ -493,7 +507,7 @@ export function EventMissions({ eventId }: Props) {
 
         {canUseMissions ? (
           <section className="space-y-3">
-            {visibleMissions.map((mission) => {
+            {featureMissionEnabled ? visibleMissions.map((mission) => {
               if (mission.type === "checkbox") {
                 const isChecked = checkedMissionIds.includes(mission.id);
                 return (
@@ -584,7 +598,14 @@ export function EventMissions({ eventId }: Props) {
                   <p className="text-center text-lg font-black text-emerald-600">+{linePoints} pt</p>
                 </div>
               );
-            })}
+            }) : (
+              <article className="rounded-2xl border-4 border-zinc-300 bg-white p-4 shadow-[0_8px_0_#a1a1aa]">
+                <h2 className="text-lg font-black text-zinc-900">ミッション機能は無効です</h2>
+                <p className="mt-2 text-sm text-zinc-600">
+                  このイベントではミッションが利用停止になっています。運営画面のイベント機能で設定を確認してください。
+                </p>
+              </article>
+            )}
           </section>
         ) : null}
       </main>

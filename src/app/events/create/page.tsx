@@ -8,6 +8,7 @@ import { addDoc, collection, doc, serverTimestamp, setDoc } from "firebase/fires
 import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { buildCreatorFooterSupportMailtoHref } from "../../lib/contact-mail";
+import { DEFAULT_EVENT_FEATURES } from "../../lib/event-features";
 import { setEventSession } from "../../lib/event-session";
 
 type CreatedSummary = {
@@ -67,6 +68,7 @@ export default function EventCreatePage() {
         ownerUid: authUid,
         status: "active",
         rankingVisible: true,
+        features: DEFAULT_EVENT_FEATURES,
         createdAt: serverTimestamp(),
       });
       const eventId = ref.id;

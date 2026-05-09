@@ -16,6 +16,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
+import { resolveEventFeatures } from "../../lib/event-features";
 import { getAdminAccess, setAdminAccess } from "../../lib/event-session";
 import {
   type MissionFields,
@@ -59,6 +60,7 @@ export default function EventAdminPage({ params }: Props) {
   const [creatorNameDisplay, setCreatorNameDisplay] = useState("");
   const [joinPasswordDisplay, setJoinPasswordDisplay] = useState("");
   const [adminPinDisplay, setAdminPinDisplay] = useState("");
+  const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
 
   const isOwner = Boolean(currentUid && ownerUid && currentUid === ownerUid);
   const canManage = isOwner || pinSession;
@@ -119,6 +121,7 @@ export default function EventAdminPage({ params }: Props) {
         password?: string;
         joinCode?: string;
         joinUrl?: string;
+        features?: unknown;
       };
       setEventTitle(String(data.title ?? "イベント"));
       setCreatorNameDisplay(String(data.creatorName ?? "").trim());
@@ -128,6 +131,7 @@ export default function EventAdminPage({ params }: Props) {
       setAdminPinDisplay(String(data.adminPin ?? "").trim());
       setOwnerUid(String(data.ownerUid ?? ""));
       setRankingVisible(Boolean(data.rankingVisible));
+      setFeatureMissionEnabled(resolveEventFeatures(data.features).mission);
       setEventStatus((data as { status?: string }).status === "closed" ? "closed" : "active");
       const code = (data.joinCode?.trim() || data.password?.trim() || "").trim();
       setJoinCode(code);
@@ -516,6 +520,22 @@ export default function EventAdminPage({ params }: Props) {
           </button>
           <Link href={`/events/${eventId}/ranking`} className="mt-2 block text-sm font-semibold text-blue-600 underline">
             ランキング画面を確認
+          </Link>
+        </section>
+
+        <section className="rounded-2xl border-4 border-fuchsia-300 bg-white p-4 shadow-[0_8px_0_#d946ef]">
+          <h2 className="text-lg font-extrabold text-zinc-900">イベント機能</h2>
+          <p className="mt-2 text-sm text-zinc-700">
+            ミッション・クイズ・ビンゴ・ルーレットなどを管理できます。
+          </p>
+          <p className="mt-2 text-xs text-zinc-500">
+            現在の有効機能: {featureMissionEnabled ? "ミッション" : "なし"}
+          </p>
+          <Link
+            href={`/events/${eventId}/features`}
+            className="mt-3 inline-flex rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white"
+          >
+            イベント機能を開く
           </Link>
         </section>
 
