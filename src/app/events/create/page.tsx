@@ -7,63 +7,38 @@ import { signInAnonymously } from "firebase/auth";
 import { addDoc, collection, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
-import {
-  buildCreatorFooterSupportMailtoHref,
-  buildEventCreatedSaveMailtoHref,
-  validateCreatorContactEmail,
-} from "../../lib/contact-mail";
+import { buildCreatorFooterSupportMailtoHref } from "../../lib/contact-mail";
 import { setEventSession } from "../../lib/event-session";
 
 type CreatedSummary = {
   eventId: string;
   eventName: string;
   creatorName: string;
-  creatorEmail: string;
   joinPassword: string;
   adminPin: string;
-  joinUrl: string;
-  adminUrl: string;
 };
 
 export default function EventCreatePage() {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [creatorName, setCreatorName] = useState("");
-  const [creatorEmail, setCreatorEmail] = useState("");
   const [adminPin, setAdminPin] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState<CreatedSummary | null>(null);
+  const [copyMessage, setCopyMessage] = useState("");
 
   const footerSupportMailto = useMemo(() => buildCreatorFooterSupportMailtoHref(), []);
-
-  const eventSaveMailto = useMemo(() => {
-    if (!created) return "";
-    return buildEventCreatedSaveMailtoHref(created.creatorEmail, {
-      eventName: created.eventName,
-      creatorName: created.creatorName,
-      eventId: created.eventId,
-      joinPassword: created.joinPassword,
-      adminPin: created.adminPin,
-      joinUrl: created.joinUrl,
-      adminUrl: created.adminUrl,
-    });
-  }, [created]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const t = title.trim();
     const creator = creatorName.trim();
-    const email = creatorEmail.trim();
     const pin = adminPin.trim();
     const joinPw = joinPassword.trim();
     if (!t || !creator || !pin || !joinPw) {
       setMessage("イベント名・作成者名・管理用PIN・参加用パスワードを入力してください。");
-      return;
-    }
-    if (!validateCreatorContactEmail(email)) {
-      setMessage("作成者メールアドレスを正しく入力してください（メール保存・連絡用）。");
       return;
     }
     if (!isValidFourDigitAdminPin(pin)) {
@@ -77,7 +52,6 @@ export default function EventCreatePage() {
       await signInAnonymously(auth);
       const authUid = auth.currentUser!.uid;
       const joinCode = t;
-      const origin = typeof window !== "undefined" ? window.location.origin : "";
       const joinUrl =
         typeof window !== "undefined"
           ? `${window.location.origin}/join?code=${encodeURIComponent(joinCode)}`
@@ -85,7 +59,6 @@ export default function EventCreatePage() {
       const ref = await addDoc(collection(db, "events"), {
         title: t,
         creatorName: creator,
-        creatorContactEmail: email,
         password: t,
         joinCode,
         joinUrl,
@@ -97,7 +70,6 @@ export default function EventCreatePage() {
         createdAt: serverTimestamp(),
       });
       const eventId = ref.id;
-      const adminUrlFull = `${origin}/admin/${eventId}`;
       const ownerKey = "host";
       await setDoc(doc(db, "events", eventId, "participants", ownerKey), {
         name: creator,
@@ -110,17 +82,32 @@ export default function EventCreatePage() {
         eventId,
         eventName: t,
         creatorName: creator,
-        creatorEmail: email,
         joinPassword: joinPw,
         adminPin: pin,
-        joinUrl,
-        adminUrl: adminUrlFull,
       });
     } catch (err) {
       console.error(err);
       setMessage("作成に失敗しました。Firestore の権限を確認してください。");
     } finally {
       setPending(false);
+    }
+  };
+
+  const handleCopyCreatedInfo = async () => {
+    if (!created) return;
+    const text = [
+      "イベント情報",
+      `イベント名：${created.eventName}`,
+      `作成者名：${created.creatorName}`,
+      `管理用PIN：${created.adminPin}`,
+      `参加用パスワード：${created.joinPassword}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyMessage("コピーしました");
+    } catch (error) {
+      console.error(error);
+      setCopyMessage("コピーに失敗しました");
     }
   };
 
@@ -136,16 +123,33 @@ export default function EventCreatePage() {
           </div>
 
           <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-zinc-800">イベント名: {created.eventName}</p>
-            <a
-              href={eventSaveMailto}
+            <h2 className="text-base font-black text-zinc-900">イベント情報</h2>
+            <dl className="grid gap-2 rounded-xl bg-zinc-50 p-3 text-sm">
+              <div>
+                <dt className="text-zinc-500">イベント名</dt>
+                <dd className="font-bold text-zinc-900">{created.eventName}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">作成者名</dt>
+                <dd className="font-bold text-zinc-900">{created.creatorName}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">管理用PIN</dt>
+                <dd className="font-mono text-base font-bold tracking-widest text-zinc-900">{created.adminPin}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">参加用パスワード</dt>
+                <dd className="break-all font-mono text-base font-bold text-zinc-900">{created.joinPassword}</dd>
+              </div>
+            </dl>
+            <button
+              type="button"
+              onClick={() => void handleCopyCreatedInfo()}
               className="flex min-h-[48px] items-center justify-center rounded-xl bg-emerald-600 px-4 py-3 text-center text-base font-bold text-white active:bg-emerald-700"
             >
-              イベント情報をメール保存
-            </a>
-            <p className="text-xs leading-relaxed text-zinc-500">
-              入力した作成者メールアドレス宛に、Gmail などの作成画面が開きます。送信前に内容を確認してください。
-            </p>
+              コピー
+            </button>
+            {copyMessage ? <p className="text-center text-xs font-semibold text-zinc-600">{copyMessage}</p> : null}
           </div>
 
           <div className="flex flex-col gap-2">
@@ -209,22 +213,6 @@ export default function EventCreatePage() {
               autoComplete="off"
               enterKeyHint="done"
             />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="text-sm font-semibold text-zinc-800">作成者メールアドレス</span>
-            <input
-              type="email"
-              inputMode="email"
-              value={creatorEmail}
-              onChange={(e) => setCreatorEmail(e.target.value)}
-              className="rounded-xl border-2 border-zinc-200 px-4 py-3 text-base"
-              placeholder="例：you@example.com"
-              autoComplete="email"
-              enterKeyHint="done"
-            />
-            <span className="text-xs text-zinc-500">
-              作成完了後「イベント情報をメール保存」でこの宛先に送ります。運営への問い合わせ先ではありません。
-            </span>
           </label>
           <label className="flex flex-col gap-1">
             <span className="text-sm font-semibold text-zinc-800">管理用PIN</span>
