@@ -567,7 +567,7 @@ export default function EventAdminPage({ params }: Props) {
             現在の有効機能: {featureMissionEnabled ? "ミッション" : "なし"}
           </p>
           <Link
-            href={`/events/${eventId}/features`}
+            href={`/events/${eventId}/features?from=admin`}
             className="mt-3 inline-flex rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white"
           >
             イベント機能を開く

@@ -497,7 +497,7 @@ export function EventMissions({ eventId }: Props) {
             ) : null}
             {canUseMissions && featureMissionEnabled ? (
               <Link
-                href={`/events/${eventId}/features`}
+                href={`/events/${eventId}/features?from=participant`}
                 className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-fuchsia-200 bg-fuchsia-50 text-[10px] font-semibold text-fuchsia-700 shadow-sm"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">

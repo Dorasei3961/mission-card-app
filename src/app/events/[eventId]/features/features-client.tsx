@@ -8,9 +8,21 @@ import { resolveEventFeatures } from "../../../lib/event-features";
 
 type Props = { eventId: string };
 
+/** URL は参加者経由のみ ?from=admin を付ける。未指定・それ以外は参加者モード（運営導線を出さない） */
+function readFromAdminFromUrl(): boolean {
+  if (typeof window === "undefined") return false;
+  const v = new URLSearchParams(window.location.search).get("from");
+  return v === "admin";
+}
+
 export function EventFeaturesClient({ eventId }: Props) {
   const [eventTitle, setEventTitle] = useState("イベント");
   const [features, setFeatures] = useState(resolveEventFeatures(undefined));
+  const [fromAdmin, setFromAdmin] = useState(false);
+
+  useEffect(() => {
+    setFromAdmin(readFromAdminFromUrl());
+  }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -32,7 +44,9 @@ export function EventFeaturesClient({ eventId }: Props) {
         id: "mission",
         title: "ミッション",
         enabled: features.mission,
-        description: "ミッションカードの作成・編集・達成状況を確認できます。",
+        description: fromAdmin
+          ? "ミッションカードの作成・編集・達成状況を確認できます。"
+          : "ミッションに挑戦してポイントをためられます。",
       },
       {
         id: "quiz",
@@ -53,7 +67,7 @@ export function EventFeaturesClient({ eventId }: Props) {
         description: "抽選・チーム分け・景品決めに使えます。",
       },
     ],
-    [features],
+    [features, fromAdmin],
   );
 
   return (
@@ -63,21 +77,25 @@ export function EventFeaturesClient({ eventId }: Props) {
           <p className="text-sm font-semibold text-fuchsia-700">{eventTitle}</p>
           <h1 className="text-2xl font-black text-zinc-900">イベント機能</h1>
           <p className="mt-1 text-xs text-zinc-600">
-            イベントで利用するコンテンツ機能を確認できます。
+            {fromAdmin
+              ? "イベントで利用するコンテンツ機能を管理・確認できます。"
+              : "このイベントで使えるコンテンツ機能です。"}
           </p>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Link
               href={`/events/${eventId}`}
               className="inline-flex rounded-full bg-zinc-500 px-4 py-2 text-sm font-bold text-white"
             >
               参加画面へ
             </Link>
-            <Link
-              href={`/admin/${eventId}`}
-              className="inline-flex rounded-full bg-blue-600 px-4 py-2 text-sm font-bold text-white"
-            >
-              運営画面へ
-            </Link>
+            {fromAdmin ? (
+              <Link
+                href={`/admin/${eventId}`}
+                className="inline-flex rounded-full bg-blue-600 px-4 py-2 text-sm font-bold text-white"
+              >
+                運営画面へ
+              </Link>
+            ) : null}
           </div>
         </header>
 
@@ -102,12 +120,21 @@ export function EventFeaturesClient({ eventId }: Props) {
               {card.id === "mission" ? (
                 <div className="mt-3">
                   {card.enabled ? (
-                    <Link
-                      href={`/admin/${eventId}`}
-                      className="inline-flex rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white"
-                    >
-                      ミッション管理を開く
-                    </Link>
+                    fromAdmin ? (
+                      <Link
+                        href={`/admin/${eventId}`}
+                        className="inline-flex rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white"
+                      >
+                        ミッション管理を開く
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/events/${eventId}`}
+                        className="inline-flex rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white"
+                      >
+                        ミッションへ（参加画面）
+                      </Link>
+                    )
                   ) : (
                     <p className="text-xs text-zinc-500">現在は無効です。</p>
                   )}
