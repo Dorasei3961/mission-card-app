@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
+  Timestamp,
   collection,
   deleteDoc,
   doc,
@@ -13,6 +14,21 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
+import {
+  BarChart3,
+  Bell,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  LayoutGrid,
+  Link2,
+  ListChecks,
+  QrCode,
+  Settings,
+  Trophy,
+  Users,
+  X,
+} from "lucide-react";
 import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
@@ -26,7 +42,8 @@ import {
 } from "../../lib/mission-schema";
 
 type AdminMission = MissionFields & { docId: string };
-type ParticipantSummary = { uid: string; name: string; totalPoints: number };
+type ParticipantSummary = { uid: string; name: string; totalPoints: number; completedCount: number };
+type FeatureTab = "mission" | "quiz" | "bingo" | "roulette";
 type Props = { params: Promise<{ eventId: string }> };
 
 const DEFAULT_CATEGORY_COLOR = "custom";
@@ -60,6 +77,14 @@ export default function EventAdminPage({ params }: Props) {
   const [joinPasswordDisplay, setJoinPasswordDisplay] = useState("");
   const [adminPinDisplay, setAdminPinDisplay] = useState("");
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
+  const [createdAtDisplay, setCreatedAtDisplay] = useState("—");
+  const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [featureTab, setFeatureTab] = useState<FeatureTab>("mission");
+  const [missionEditorOpen, setMissionEditorOpen] = useState(false);
+
+  const featureTabsRef = useRef<HTMLDivElement>(null);
+  const detailSettingsRef = useRef<HTMLDivElement>(null);
 
   /** Firebase のイベント作成者でも、運営UIは管理PIN認証後のみ（owner バイパスなし） */
   const canManage = pinSession;
@@ -104,6 +129,7 @@ export default function EventAdminPage({ params }: Props) {
         setCreatorNameDisplay("");
         setJoinPasswordDisplay("");
         setAdminPinDisplay("");
+        setCreatedAtDisplay("—");
         setEventMissing(true);
         return;
       }
@@ -118,7 +144,14 @@ export default function EventAdminPage({ params }: Props) {
         joinCode?: string;
         joinUrl?: string;
         features?: unknown;
+        createdAt?: unknown;
       };
+      const ca = data.createdAt;
+      setCreatedAtDisplay(
+        ca instanceof Timestamp
+          ? ca.toDate().toLocaleDateString("ja-JP", { year: "numeric", month: "short", day: "numeric" })
+          : "—",
+      );
       setEventTitle(String(data.title ?? "イベント"));
       setCreatorNameDisplay(String(data.creatorName ?? "").trim());
       setJoinPasswordDisplay(
@@ -196,11 +229,12 @@ export default function EventAdminPage({ params }: Props) {
     const snapshot = await getDocs(collection(db, "events", eventId, "participants"));
     const rows = snapshot.docs
       .map((d) => {
-        const data = d.data() as { name?: string; totalPoints?: number };
+        const data = d.data() as { name?: string; totalPoints?: number; completedCount?: number };
         return {
           uid: d.id,
           name: data.name?.trim() || "未登録ユーザー",
           totalPoints: typeof data.totalPoints === "number" ? data.totalPoints : 0,
+          completedCount: typeof data.completedCount === "number" ? data.completedCount : 0,
         };
       })
       .sort((a, b) => b.totalPoints - a.totalPoints);
@@ -404,6 +438,35 @@ export default function EventAdminPage({ params }: Props) {
     }
   };
 
+  const logoutAdmin = () => {
+    setAdminAccess(eventId, false);
+    setPinSession(false);
+  };
+
+  const missionStats = useMemo(() => {
+    const active = missions.filter((m) => m.isActive !== false);
+    const activeCount = active.length;
+    const pc = participants.length;
+    const achievementSum = participants.reduce((s, p) => s + p.completedCount, 0);
+    const denom = activeCount > 0 && pc > 0 ? activeCount * pc : 0;
+    const achievementRate = denom > 0 ? Math.min(100, Math.round((achievementSum / denom) * 100)) : 0;
+    return { activeCount, achievementSum, achievementRate, participantCount: pc };
+  }, [missions, participants]);
+
+  const qrImageSrc =
+    joinUrl.length > 0
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(joinUrl)}`
+      : "";
+
+  const scrollToFeatures = () => {
+    featureTabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const scrollToDetailSettings = () => {
+    setSettingsOpen(true);
+    requestAnimationFrame(() => detailSettingsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
   if (!eventId || !authReady || !eventResolved) {
     return (
       <div className="min-h-screen bg-zinc-100 p-4">
@@ -430,12 +493,12 @@ export default function EventAdminPage({ params }: Props) {
 
   if (!canManage) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-indigo-100 via-sky-100 to-cyan-100 p-4">
+      <div className="min-h-screen bg-violet-50/70 p-4 pb-10">
         <main className="mx-auto flex w-full max-w-md flex-col gap-4 pt-8">
-          <div className="rounded-2xl border-4 border-indigo-300 bg-white p-5 shadow-[0_8px_0_#6366f1]">
-            <h1 className="text-xl font-black text-zinc-900">運営管理画面</h1>
-            <p className="mt-3 text-sm font-bold text-zinc-800">運営PINを入力してください</p>
-            <p className="mt-1 text-xs text-zinc-600">
+          <div className="rounded-2xl border border-violet-100 bg-white p-5 shadow-sm">
+            <p className="text-xs font-semibold text-violet-600">運営管理画面</p>
+            <h1 className="mt-1 text-lg font-bold text-zinc-900">管理PINの入力</h1>
+            <p className="mt-2 text-sm text-zinc-600">
               イベント作成者のほか、管理PINを知っている方のみ入場できます。
             </p>
             <input
@@ -452,7 +515,7 @@ export default function EventAdminPage({ params }: Props) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") void verifyGatePin();
               }}
-              className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
+              className="mt-4 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3.5 text-xl font-bold tracking-widest outline-none ring-violet-500/30 focus:ring-2"
               placeholder="例：1234"
               disabled={gatePinBusy}
             />
@@ -463,13 +526,13 @@ export default function EventAdminPage({ params }: Props) {
               type="button"
               disabled={gatePinBusy}
               onClick={() => void verifyGatePin()}
-              className="mt-4 w-full rounded-xl bg-indigo-600 py-3 text-base font-bold text-white disabled:opacity-50 touch-manipulation"
+              className="mt-4 w-full rounded-xl bg-[#7C3AED] py-3 text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
             >
               {gatePinBusy ? "確認中…" : "確認して進む"}
             </button>
             <Link
               href={`/events/${eventId}`}
-              className="mt-3 block text-center text-sm font-semibold text-blue-600 underline"
+              className="mt-4 block text-center text-sm font-semibold text-violet-700 underline underline-offset-2"
             >
               参加者画面へ戻る
             </Link>
@@ -479,188 +542,626 @@ export default function EventAdminPage({ params }: Props) {
     );
   }
 
+  const tabDefs: { id: FeatureTab; label: string }[] = [
+    { id: "mission", label: "ミッション" },
+    { id: "quiz", label: "クイズ" },
+    { id: "bingo", label: "ビンゴ" },
+    { id: "roulette", label: "ルーレット" },
+  ];
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-100 via-sky-100 to-cyan-100 p-4">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4">
-        <header className="rounded-2xl border-4 border-indigo-300 bg-white p-4 shadow-[0_8px_0_#6366f1]">
-          <p className="text-sm font-semibold text-indigo-700">運営管理画面</p>
-          <h1 className="text-2xl font-black text-zinc-900">{eventTitle || "Point Admin"}</h1>
-          <p className="mt-1 text-xs font-bold text-zinc-600">
-            状態: {eventStatus === "closed" ? "終了済み" : "開催中"}
-          </p>
-          <Link href={`/events/${eventId}`} className="mt-3 inline-flex rounded-full bg-emerald-500 px-4 py-2 text-sm font-bold text-white">
-            参加者画面へ戻る
-          </Link>
-          <Link
-            href={`/admin/${eventId}/participants`}
-            className="mt-2 inline-flex rounded-full bg-cyan-600 px-4 py-2 text-sm font-bold text-white"
-          >
-            参加者管理
-          </Link>
-          <button
-            onClick={() => void closeEvent()}
-            disabled={!canManage || eventStatus === "closed"}
-            className="mt-2 inline-flex rounded-full bg-rose-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
-          >
-            イベント終了
-          </button>
+    <div className="min-h-screen bg-gradient-to-b from-violet-50/90 to-zinc-50 pb-28">
+      <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pt-4">
+        {message ? (
+          <div className="rounded-xl border border-violet-100 bg-white px-3 py-2 text-xs font-semibold text-violet-800 shadow-sm">
+            {message}
+          </div>
+        ) : null}
+
+        <header className="relative overflow-hidden rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
+                運営管理画面
+              </p>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <h1 className="truncate text-xl font-bold text-zinc-900">{eventTitle || "イベント"}</h1>
+                <span
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                    eventStatus === "closed"
+                      ? "bg-zinc-100 text-zinc-600"
+                      : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200/80"
+                  }`}
+                >
+                  <span className={eventStatus === "closed" ? "text-zinc-400" : "text-emerald-500"}>●</span>
+                  {eventStatus === "closed" ? "終了" : "開催中"}
+                </span>
+              </div>
+            </div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+              <Trophy className="h-6 w-6" strokeWidth={1.75} aria-hidden />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500">
+                <Users className="h-3.5 w-3.5 text-violet-500" strokeWidth={2} aria-hidden />
+                参加者数
+              </div>
+              <p className="mt-0.5 text-sm font-bold text-zinc-900">{participants.length}人</p>
+            </div>
+            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500">
+                <CalendarDays className="h-3.5 w-3.5 text-violet-500" strokeWidth={2} aria-hidden />
+                作成日
+              </div>
+              <p className="mt-0.5 text-sm font-bold text-zinc-900">{createdAtDisplay}</p>
+            </div>
+          </div>
         </header>
 
-        <section className="rounded-2xl border-4 border-slate-300 bg-white p-4 shadow-[0_8px_0_#94a3b8]">
-          <h2 className="text-lg font-extrabold text-zinc-900">認証情報の確認</h2>
-          <p className="mt-1 text-xs text-zinc-500">
-            運営画面のみ表示されます。作成者が忘れたときの確認用です。
-          </p>
-          <dl className="mt-3 space-y-3 text-sm">
-            <div>
-              <dt className="font-semibold text-zinc-700">イベント名</dt>
-              <dd className="mt-0.5 break-all font-medium text-zinc-900">{eventTitle || "—"}</dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-zinc-700">作成者名</dt>
-              <dd className="mt-0.5 break-all font-medium text-zinc-900">
-                {creatorNameDisplay || "—"}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-zinc-700">参加用パスワード</dt>
-              <dd className="mt-0.5 break-all font-mono text-base font-bold text-zinc-900">
-                {joinPasswordDisplay || "（未設定）"}
-              </dd>
-            </div>
-            <div>
-              <dt className="font-semibold text-zinc-700">管理用PIN</dt>
-              <dd className="mt-0.5 font-mono text-base font-bold tracking-widest text-zinc-900">
-                {adminPinDisplay || "—"}
-              </dd>
-            </div>
-          </dl>
+        <section aria-label="クイックメニュー" className="rounded-2xl border border-violet-100 bg-white p-3 shadow-sm">
+          <div className="grid grid-cols-5 gap-1">
+            <Link
+              href={`/admin/${eventId}/participants`}
+              className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-700 transition hover:bg-violet-50 touch-manipulation"
+            >
+              <Users className="h-5 w-5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+              <span className="leading-tight text-center">参加者管理</span>
+            </Link>
+            <Link
+              href={`/events/${eventId}/ranking`}
+              className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-700 transition hover:bg-violet-50 touch-manipulation"
+            >
+              <Trophy className="h-5 w-5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+              <span className="leading-tight text-center">ランキング</span>
+            </Link>
+            <button
+              type="button"
+              onClick={scrollToFeatures}
+              className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-700 transition hover:bg-violet-50 touch-manipulation"
+            >
+              <LayoutGrid className="h-5 w-5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+              <span className="leading-tight text-center">イベント機能</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setQrModalOpen(true)}
+              className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-700 transition hover:bg-violet-50 touch-manipulation"
+            >
+              <QrCode className="h-5 w-5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+              <span className="leading-tight text-center">QRコード</span>
+            </button>
+            <button
+              type="button"
+              onClick={scrollToDetailSettings}
+              className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-700 transition hover:bg-violet-50 touch-manipulation"
+            >
+              <Settings className="h-5 w-5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+              <span className="leading-tight text-center">設定</span>
+            </button>
+          </div>
         </section>
 
-        <section className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
-          <h2 className="text-lg font-extrabold text-zinc-900">ランキング表示設定</h2>
-          <p className="mt-2 text-sm font-semibold text-zinc-700">対象イベント: {eventTitle || "未取得"}</p>
-          <button
-            onClick={() => void toggleRankingVisible()}
-            disabled={!canEdit}
-            className={`mt-2 rounded-xl px-3 py-2 text-sm font-bold text-white ${rankingVisible ? "bg-emerald-600" : "bg-zinc-600"} disabled:opacity-50`}
-          >
-            ランキング表示: {rankingVisible ? "ON" : "OFF"}
-          </button>
-          <Link href={`/events/${eventId}/ranking`} className="mt-2 block text-sm font-semibold text-blue-600 underline">
-            ランキング画面を確認
-          </Link>
-        </section>
-
-        <section className="rounded-2xl border-4 border-fuchsia-300 bg-white p-4 shadow-[0_8px_0_#d946ef]">
-          <h2 className="text-lg font-extrabold text-zinc-900">イベント機能</h2>
-          <p className="mt-2 text-sm text-zinc-700">
-            ミッション・クイズ・ビンゴ・ルーレットなどを管理できます。
-          </p>
-          <p className="mt-2 text-xs text-zinc-500">
-            現在の有効機能: {featureMissionEnabled ? "ミッション" : "なし"}
-          </p>
-          <Link
-            href={`/events/${eventId}/features?from=admin`}
-            className="mt-3 inline-flex rounded-xl bg-fuchsia-600 px-4 py-2 text-sm font-bold text-white"
-          >
-            イベント機能を開く
-          </Link>
-        </section>
-
-        <section className="rounded-2xl border-4 border-emerald-300 bg-white p-4 shadow-[0_8px_0_#10b981]">
-          <h2 className="text-lg font-extrabold text-zinc-900">参加用QRコード</h2>
-          <p className="mt-2 text-xs text-zinc-600">QRを読み取ると参加画面が開き、合言葉が自動入力されます。</p>
-          <p className="mt-2 rounded-lg bg-zinc-100 px-3 py-2 text-xs font-semibold text-zinc-800 break-all">
-            {joinUrl || "URL生成中..."}
-          </p>
-          {joinUrl ? (
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(joinUrl)}`}
-              alt="参加用QRコード"
-              className="mx-auto mt-3 h-48 w-48 rounded-lg border border-zinc-200 bg-white p-2"
-            />
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void copyJoinUrl()}
-            className="mt-3 w-full rounded-xl bg-emerald-600 py-3 text-sm font-bold text-white"
-          >
-            URLコピー
-          </button>
-        </section>
-
-        <section className="rounded-2xl border-4 border-violet-300 bg-white p-4 shadow-[0_8px_0_#8b5cf6]">
-          <h2 className="text-lg font-extrabold text-zinc-900">1) ポイント項目</h2>
-          <div className="mt-3 flex flex-col gap-2">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="タイトル" className="rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit} />
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="説明文（任意）" className="min-h-20 rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit} />
-            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="カテゴリ（任意）" className="rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit} />
-            <input value={order} onChange={(e) => setOrder(e.target.value)} placeholder="並び順（未入力で末尾）" type="number" min={0} className="rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit} />
-            <select value={missionKind} onChange={(e) => setMissionKind(e.target.value as MissionKind)} className="rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit}>
-              <option value="checkbox">チェック型（固定ポイント）</option>
-              <option value="number">数量型（カウント × 1あたりpt）</option>
-            </select>
-            {missionKind === "checkbox" ? (
-              <input value={points} onChange={(e) => setPoints(e.target.value)} placeholder="固定ポイント（例: 20）※必須" type="number" min={0} className="rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit} />
-            ) : (
-              <input value={pointPerUnit} onChange={(e) => setPointPerUnit(e.target.value)} placeholder="1あたりのポイント（例: 50）※必須" type="number" min={1} className="rounded-xl border-2 border-zinc-200 px-3 py-2 text-sm" disabled={!canEdit} />
-            )}
-            <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-              <input type="checkbox" checked={isActiveNew} onChange={(e) => setIsActiveNew(e.target.checked)} disabled={!canEdit} />
-              公開（参加者に表示）
-            </label>
-            <button onClick={() => void handleCreateMission()} disabled={!canEdit} className="rounded-xl bg-violet-500 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">項目を追加</button>
-            {message ? <p className="text-xs font-semibold text-violet-700">{message}</p> : null}
+        <section ref={featureTabsRef} id="admin-feature-tabs" className="rounded-2xl border border-violet-100 bg-white p-3 shadow-sm">
+          <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
+            {tabDefs.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setFeatureTab(t.id)}
+                className={`min-w-0 flex-1 rounded-lg py-2 text-[11px] font-bold transition touch-manipulation ${
+                  featureTab === t.id ? "bg-[#7C3AED] text-white shadow-sm" : "text-zinc-600 hover:text-zinc-900"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          <div className="mt-4 space-y-2">
-            {missions.map((mission) => (
-              <div key={mission.docId} className="rounded-xl border-2 border-violet-100 bg-violet-50 p-3">
-                <div className="flex flex-col gap-2">
-                  <input value={mission.title} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, title: e.target.value } : it))} className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-sm font-bold" disabled={!canEdit} />
-                  <textarea value={mission.description} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, description: e.target.value } : it))} className="min-h-16 rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs" disabled={!canEdit} />
-                  <input value={mission.category} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, category: e.target.value } : it))} className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs" disabled={!canEdit} />
-                  <input type="number" min={0} value={mission.order} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, order: Math.max(0, Number(e.target.value) || 0) } : it))} className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs" disabled={!canEdit} />
-                  <select value={mission.type} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, type: e.target.value as MissionKind, points: e.target.value === "checkbox" ? (it.points > 0 ? it.points : 10) : 0, pointPerUnit: e.target.value === "number" ? (it.pointPerUnit > 0 ? it.pointPerUnit : 50) : 0 } : it))} className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs" disabled={!canEdit}>
-                    <option value="checkbox">チェック型</option><option value="number">数量型</option>
-                  </select>
-                  {mission.type === "checkbox" ? (
-                    <input type="number" min={0} value={mission.points} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, points: Number(e.target.value) || 0 } : it))} className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs" disabled={!canEdit} />
-                  ) : (
-                    <input type="number" min={1} value={mission.pointPerUnit} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, pointPerUnit: Number(e.target.value) || 0 } : it))} className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs" disabled={!canEdit} />
-                  )}
-                  <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700"><input type="checkbox" checked={mission.isActive} onChange={(e) => setMissions((prev) => prev.map((it) => it.docId === mission.docId ? { ...it, isActive: e.target.checked } : it))} disabled={!canEdit} />公開</label>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-emerald-700">order: {mission.order}</span>
-                    <div className="flex gap-2">
-                      <button onClick={() => void moveMission(mission.docId, "up")} disabled={!canEdit} className="rounded-lg bg-zinc-300 px-2 py-1 text-xs font-bold disabled:opacity-50">↑</button>
-                      <button onClick={() => void moveMission(mission.docId, "down")} disabled={!canEdit} className="rounded-lg bg-zinc-300 px-2 py-1 text-xs font-bold disabled:opacity-50">↓</button>
-                      <button onClick={() => void handleUpdateMission(mission)} disabled={!canEdit} className="rounded-lg bg-indigo-500 px-2 py-1 text-xs font-bold text-white disabled:opacity-50">保存</button>
-                      <button onClick={() => void handleDeleteMission(mission.docId)} disabled={!canEdit} className="rounded-lg bg-rose-500 px-2 py-1 text-xs font-bold text-white disabled:opacity-50">削除</button>
+          <div className="mt-4">
+            {featureTab === "mission" ? (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <h2 className="text-base font-bold text-zinc-900">ミッション管理</h2>
+                    <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
+                      利用中
+                    </span>
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-zinc-600">
+                    ミッションカードの作成・編集・達成状況は一覧と参加者画面で確認できます。
+                  </p>
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                      <ListChecks className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                      <p className="mt-1 text-[10px] font-semibold text-zinc-500">ミッション数</p>
+                      <p className="text-sm font-bold text-zinc-900">{missionStats.activeCount}個</p>
+                    </div>
+                    <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                      <CheckCircle2 className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                      <p className="mt-1 text-[10px] font-semibold text-zinc-500">達成数</p>
+                      <p className="text-sm font-bold text-zinc-900">{missionStats.achievementSum}件</p>
+                    </div>
+                    <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                      <BarChart3 className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                      <p className="mt-1 text-[10px] font-semibold text-zinc-500">達成率</p>
+                      <p className="text-sm font-bold text-zinc-900">{missionStats.achievementRate}%</p>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setMissionEditorOpen((v) => !v)}
+                    className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl bg-[#7C3AED] py-2.5 text-sm font-bold text-white shadow-sm touch-manipulation"
+                  >
+                    {missionEditorOpen ? "編集エリアを閉じる" : "ミッション管理画面を開く"}
+                    <ChevronRight
+                      className={`h-4 w-4 transition ${missionEditorOpen ? "rotate-90" : ""}`}
+                      strokeWidth={2}
+                      aria-hidden
+                    />
+                  </button>
+                  {!featureMissionEnabled ? (
+                    <p className="mt-2 text-[11px] font-semibold text-amber-700">
+                      イベント設定でミッション機能がOFFの可能性があります。機能ハブで確認してください。
+                    </p>
+                  ) : null}
                 </div>
+
+                {missionEditorOpen ? (
+                  <div className="rounded-xl border border-violet-100 bg-white p-3 shadow-sm">
+                    <h3 className="text-sm font-bold text-zinc-900">ミッションの編集</h3>
+                    <div className="mt-3 flex flex-col gap-2">
+                      <input
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        placeholder="タイトル"
+                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                        disabled={!canEdit}
+                      />
+                      <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder="説明文（任意）"
+                        className="min-h-20 rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                        disabled={!canEdit}
+                      />
+                      <input
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        placeholder="カテゴリ（任意）"
+                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                        disabled={!canEdit}
+                      />
+                      <input
+                        value={order}
+                        onChange={(e) => setOrder(e.target.value)}
+                        placeholder="並び順（未入力で末尾）"
+                        type="number"
+                        min={0}
+                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                        disabled={!canEdit}
+                      />
+                      <select
+                        value={missionKind}
+                        onChange={(e) => setMissionKind(e.target.value as MissionKind)}
+                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                        disabled={!canEdit}
+                      >
+                        <option value="checkbox">チェック型（固定ポイント）</option>
+                        <option value="number">数量型（カウント × 1あたりpt）</option>
+                      </select>
+                      {missionKind === "checkbox" ? (
+                        <input
+                          value={points}
+                          onChange={(e) => setPoints(e.target.value)}
+                          placeholder="固定ポイント（例: 20）※必須"
+                          type="number"
+                          min={0}
+                          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                          disabled={!canEdit}
+                        />
+                      ) : (
+                        <input
+                          value={pointPerUnit}
+                          onChange={(e) => setPointPerUnit(e.target.value)}
+                          placeholder="1あたりのポイント（例: 50）※必須"
+                          type="number"
+                          min={1}
+                          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                          disabled={!canEdit}
+                        />
+                      )}
+                      <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
+                        <input
+                          type="checkbox"
+                          checked={isActiveNew}
+                          onChange={(e) => setIsActiveNew(e.target.checked)}
+                          disabled={!canEdit}
+                        />
+                        公開（参加者に表示）
+                      </label>
+                      <button
+                        onClick={() => void handleCreateMission()}
+                        disabled={!canEdit}
+                        className="rounded-xl bg-[#7C3AED] px-3 py-2 text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
+                      >
+                        項目を追加
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      {missions.map((mission) => (
+                        <div key={mission.docId} className="rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+                          <div className="flex flex-col gap-2">
+                            <input
+                              value={mission.title}
+                              onChange={(e) =>
+                                setMissions((prev) =>
+                                  prev.map((it) =>
+                                    it.docId === mission.docId ? { ...it, title: e.target.value } : it,
+                                  ),
+                                )
+                              }
+                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500/25"
+                              disabled={!canEdit}
+                            />
+                            <textarea
+                              value={mission.description}
+                              onChange={(e) =>
+                                setMissions((prev) =>
+                                  prev.map((it) =>
+                                    it.docId === mission.docId ? { ...it, description: e.target.value } : it,
+                                  ),
+                                )
+                              }
+                              className="min-h-16 rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                              disabled={!canEdit}
+                            />
+                            <input
+                              value={mission.category}
+                              onChange={(e) =>
+                                setMissions((prev) =>
+                                  prev.map((it) =>
+                                    it.docId === mission.docId ? { ...it, category: e.target.value } : it,
+                                  ),
+                                )
+                              }
+                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                              disabled={!canEdit}
+                            />
+                            <input
+                              type="number"
+                              min={0}
+                              value={mission.order}
+                              onChange={(e) =>
+                                setMissions((prev) =>
+                                  prev.map((it) =>
+                                    it.docId === mission.docId
+                                      ? { ...it, order: Math.max(0, Number(e.target.value) || 0) }
+                                      : it,
+                                  ),
+                                )
+                              }
+                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                              disabled={!canEdit}
+                            />
+                            <select
+                              value={mission.type}
+                              onChange={(e) =>
+                                setMissions((prev) =>
+                                  prev.map((it) =>
+                                    it.docId === mission.docId
+                                      ? {
+                                          ...it,
+                                          type: e.target.value as MissionKind,
+                                          points:
+                                            e.target.value === "checkbox"
+                                              ? it.points > 0
+                                                ? it.points
+                                                : 10
+                                              : 0,
+                                          pointPerUnit:
+                                            e.target.value === "number"
+                                              ? it.pointPerUnit > 0
+                                                ? it.pointPerUnit
+                                                : 50
+                                              : 0,
+                                        }
+                                      : it,
+                                  ),
+                                )
+                              }
+                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                              disabled={!canEdit}
+                            >
+                              <option value="checkbox">チェック型</option>
+                              <option value="number">数量型</option>
+                            </select>
+                            {mission.type === "checkbox" ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={mission.points}
+                                onChange={(e) =>
+                                  setMissions((prev) =>
+                                    prev.map((it) =>
+                                      it.docId === mission.docId
+                                        ? { ...it, points: Number(e.target.value) || 0 }
+                                        : it,
+                                    ),
+                                  )
+                                }
+                                className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                                disabled={!canEdit}
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                min={1}
+                                value={mission.pointPerUnit}
+                                onChange={(e) =>
+                                  setMissions((prev) =>
+                                    prev.map((it) =>
+                                      it.docId === mission.docId
+                                        ? { ...it, pointPerUnit: Number(e.target.value) || 0 }
+                                        : it,
+                                    ),
+                                  )
+                                }
+                                className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                                disabled={!canEdit}
+                              />
+                            )}
+                            <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
+                              <input
+                                type="checkbox"
+                                checked={mission.isActive}
+                                onChange={(e) =>
+                                  setMissions((prev) =>
+                                    prev.map((it) =>
+                                      it.docId === mission.docId ? { ...it, isActive: e.target.checked } : it,
+                                    ),
+                                  )
+                                }
+                                disabled={!canEdit}
+                              />
+                              公開
+                            </label>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold text-emerald-700">order: {mission.order}</span>
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <button
+                                  onClick={() => void moveMission(mission.docId, "up")}
+                                  disabled={!canEdit}
+                                  className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-bold disabled:opacity-50 touch-manipulation"
+                                >
+                                  ↑
+                                </button>
+                                <button
+                                  onClick={() => void moveMission(mission.docId, "down")}
+                                  disabled={!canEdit}
+                                  className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-bold disabled:opacity-50 touch-manipulation"
+                                >
+                                  ↓
+                                </button>
+                                <button
+                                  onClick={() => void handleUpdateMission(mission)}
+                                  disabled={!canEdit}
+                                  className="rounded-lg bg-[#7C3AED] px-2 py-1 text-xs font-bold text-white disabled:opacity-50 touch-manipulation"
+                                >
+                                  保存
+                                </button>
+                                <button
+                                  onClick={() => void handleDeleteMission(mission.docId)}
+                                  disabled={!canEdit}
+                                  className="rounded-lg bg-red-500 px-2 py-1 text-xs font-bold text-white disabled:opacity-50 touch-manipulation"
+                                >
+                                  削除
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                <Link
+                  href={`/events/${eventId}/features?from=admin`}
+                  className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 touch-manipulation"
+                >
+                  <span>機能ハブ（ミッションほか）</span>
+                  <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
+                </Link>
               </div>
-            ))}
+            ) : (
+              <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-8 text-center">
+                <p className="text-sm font-bold text-zinc-700">
+                  {featureTab === "quiz" ? "クイズ" : featureTab === "bingo" ? "ビンゴ" : "ルーレット"}
+                </p>
+                <p className="mt-2 text-xs text-zinc-500">未利用 · 今後追加予定です。</p>
+              </div>
+            )}
           </div>
         </section>
 
-        <section className="rounded-2xl border-4 border-cyan-300 bg-white p-4 shadow-[0_8px_0_#06b6d4]">
-          <h2 className="text-lg font-extrabold text-zinc-900">2) 参加者一覧</h2>
-          <div className="mt-3 space-y-2">
-            {participants.map((p) => (
-              <div key={p.uid} className="rounded-xl border-2 border-cyan-100 bg-cyan-50 p-3 text-sm">
-                <p className="font-bold text-zinc-900">{p.name}</p>
-                <div className="mt-1 flex items-center justify-between text-xs text-zinc-700">
-                  <span>合計: {p.totalPoints} pt</span>
-                  <span>{p.uid.slice(0, 6)}...</span>
-                </div>
+        <section ref={detailSettingsRef} id="admin-detail-settings" className="rounded-2xl border border-zinc-200 bg-white shadow-sm">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((o) => !o)}
+            className="flex w-full items-center justify-between px-4 py-3.5 text-left touch-manipulation"
+          >
+            <span className="flex items-center gap-2 text-sm font-bold text-zinc-900">
+              <Settings className="h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+              詳細設定
+            </span>
+            <ChevronRight
+              className={`h-4 w-4 text-zinc-400 transition ${settingsOpen ? "rotate-90" : ""}`}
+              strokeWidth={2}
+              aria-hidden
+            />
+          </button>
+          {settingsOpen ? (
+            <div className="space-y-3 border-t border-zinc-100 px-4 pb-4 pt-3">
+              <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-3">
+                <h3 className="text-xs font-bold text-zinc-900">認証情報の確認</h3>
+                <p className="mt-1 text-[11px] text-zinc-500">運営画面のみ表示されます。</p>
+                <dl className="mt-3 space-y-2 text-xs">
+                  <div>
+                    <dt className="font-semibold text-zinc-600">イベント名</dt>
+                    <dd className="mt-0.5 break-all font-medium text-zinc-900">{eventTitle || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-600">作成者名</dt>
+                    <dd className="mt-0.5 break-all font-medium text-zinc-900">{creatorNameDisplay || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-600">参加用パスワード</dt>
+                    <dd className="mt-0.5 break-all font-mono text-sm font-bold text-zinc-900">
+                      {joinPasswordDisplay || "（未設定）"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-600">管理用PIN</dt>
+                    <dd className="mt-0.5 font-mono text-sm font-bold tracking-widest text-zinc-900">
+                      {adminPinDisplay || "—"}
+                    </dd>
+                  </div>
+                </dl>
               </div>
-            ))}
-          </div>
+
+              <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-3">
+                <h3 className="text-xs font-bold text-zinc-900">ランキング表示</h3>
+                <p className="mt-1 text-[11px] text-zinc-500">参加者向けランキング画面の公開設定です。</p>
+                <button
+                  onClick={() => void toggleRankingVisible()}
+                  disabled={!canEdit}
+                  className={`mt-3 w-full rounded-xl py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation ${
+                    rankingVisible ? "bg-emerald-600" : "bg-zinc-600"
+                  }`}
+                >
+                  ランキング表示: {rankingVisible ? "ON" : "OFF"}
+                </button>
+                <Link
+                  href={`/events/${eventId}/ranking`}
+                  className="mt-2 flex items-center justify-center gap-1 text-xs font-semibold text-violet-700 underline underline-offset-2"
+                >
+                  ランキング画面を開く
+                  <ChevronRight className="h-3 w-3" strokeWidth={2} aria-hidden />
+                </Link>
+              </div>
+
+              <Link
+                href={`/events/${eventId}/features?from=admin`}
+                className="flex items-center justify-between rounded-xl border border-violet-100 bg-violet-50/50 px-3 py-3 text-sm font-semibold text-zinc-900 touch-manipulation"
+              >
+                イベント機能ハブへ
+                <ChevronRight className="h-4 w-4 text-violet-500" strokeWidth={2} aria-hidden />
+              </Link>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-2xl border border-red-100 bg-red-50/40 p-4 shadow-sm">
+          <button
+            type="button"
+            onClick={() => void closeEvent()}
+            disabled={!canManage || eventStatus === "closed"}
+            className="flex w-full flex-col items-start gap-0.5 rounded-xl border border-red-200 bg-white px-3 py-3 text-left shadow-sm disabled:opacity-50 touch-manipulation"
+          >
+            <span className="flex items-center gap-2 text-sm font-bold text-red-600">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600">
+                <Bell className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </span>
+              イベントを終了する
+            </span>
+            <span className="pl-9 text-[11px] font-medium text-red-700/90">
+              イベントを終了し、参加画面の運営操作を制限します。
+            </span>
+          </button>
         </section>
       </main>
+
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-violet-100 bg-white/95 px-4 py-2 shadow-[0_-4px_20px_rgba(124,58,237,0.08)] backdrop-blur-sm"
+        aria-label="運営ナビゲーション"
+      >
+        <div className="mx-auto grid max-w-md grid-cols-3 gap-2">
+          <Link
+            href={`/events/${eventId}`}
+            className="flex flex-col items-center justify-center rounded-xl py-2 text-[11px] font-semibold text-zinc-600 transition hover:bg-violet-50 touch-manipulation"
+          >
+            参加者画面
+          </Link>
+          <Link
+            href="/events"
+            className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#7C3AED] text-xs font-bold text-white shadow-md ring-4 ring-violet-100 touch-manipulation"
+          >
+            ホーム
+          </Link>
+          <button
+            type="button"
+            onClick={logoutAdmin}
+            className="rounded-xl py-2 text-[11px] font-semibold text-zinc-600 transition hover:bg-violet-50 touch-manipulation"
+          >
+            運営ログアウト
+          </button>
+        </div>
+      </nav>
+
+      {qrModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-4 sm:items-center"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="qr-modal-title"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-violet-100 bg-white p-4 shadow-xl">
+            <div className="flex items-start justify-between gap-2">
+              <h2 id="qr-modal-title" className="text-base font-bold text-zinc-900">
+                参加用QRコード
+              </h2>
+              <button
+                type="button"
+                aria-label="閉じる"
+                onClick={() => setQrModalOpen(false)}
+                className="rounded-lg p-1 text-zinc-500 hover:bg-zinc-100 touch-manipulation"
+              >
+                <X className="h-5 w-5" strokeWidth={2} />
+              </button>
+            </div>
+            <div className="mt-4 flex justify-center rounded-xl border border-zinc-100 bg-white p-3">
+              {qrImageSrc ? (
+                <img src={qrImageSrc} alt="" className="h-52 w-52 rounded-lg" />
+              ) : (
+                <p className="py-12 text-sm text-zinc-500">URLを準備中です…</p>
+              )}
+            </div>
+            <p className="mt-3 break-all rounded-lg bg-zinc-50 px-3 py-2 text-[11px] font-medium text-zinc-700">
+              {joinUrl || "—"}
+            </p>
+            <button
+              type="button"
+              onClick={() => void copyJoinUrl()}
+              disabled={!joinUrl}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#7C3AED] py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
+            >
+              <Link2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+              URLをコピー
+            </button>
+            <button
+              type="button"
+              onClick={() => setQrModalOpen(false)}
+              className="mt-3 w-full py-2 text-sm font-semibold text-violet-700 underline underline-offset-2 touch-manipulation"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
