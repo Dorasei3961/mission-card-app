@@ -196,7 +196,7 @@ export function EventMissions({ eventId }: Props) {
         let missionSnap = await getDocs(missionsRef);
 
         if (missionSnap.empty) {
-          await Promise.all(
+          const seedResults = await Promise.allSettled(
             DEFAULT_MISSIONS_SEED.map((mission) =>
               setDoc(doc(db, "events", eventId, "missions", String(mission.id)), {
                 ...mission,
@@ -206,21 +206,22 @@ export function EventMissions({ eventId }: Props) {
               }),
             ),
           );
+          const seedFailureCount = seedResults.filter((it) => it.status === "rejected").length;
+          if (seedFailureCount > 0) {
+            console.error("[event-missions] default mission seed failed", {
+              eventId,
+              seedFailureCount,
+              results: seedResults,
+            });
+          }
           missionSnap = await getDocs(missionsRef);
-          const missionList = missionSnap.docs
-            .map((missionDoc) =>
-              normalizeMissionFromFirestore(missionDoc.id, missionDoc.data() as Record<string, unknown>),
-            )
-            .sort((a, b) => a.order - b.order || a.id - b.id);
-          setMissions(missionList);
-        } else {
-          const missionList = missionSnap.docs
-            .map((missionDoc) =>
-              normalizeMissionFromFirestore(missionDoc.id, missionDoc.data() as Record<string, unknown>),
-            )
-            .sort((a, b) => a.order - b.order || a.id - b.id);
-          setMissions(missionList);
         }
+        const missionList = missionSnap.docs
+          .map((missionDoc) =>
+            normalizeMissionFromFirestore(missionDoc.id, missionDoc.data() as Record<string, unknown>),
+          )
+          .sort((a, b) => a.order - b.order || a.id - b.id);
+        setMissions(missionList.length > 0 ? missionList : DEFAULT_MISSIONS_SEED);
 
         const progressRef = doc(db, "events", eventId, "missionProgress", participantKey);
         const progressSnap = await getDoc(progressRef);

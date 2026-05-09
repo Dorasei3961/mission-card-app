@@ -82,19 +82,26 @@ export default function EventJoinPage() {
 
   useEffect(() => {
     const load = async () => {
-      const snap = await getDocs(
-        query(collection(db, "events"), where("status", "==", "active")),
-      );
-      const rows = snap.docs.map((d) => {
-        const data = d.data() as { title?: string; creatorName?: string };
-        return {
-          id: d.id,
-          title: data.title?.trim() || "イベント",
-          creatorName: data.creatorName?.trim() || "未設定",
-        };
-      });
-      rows.sort((a, b) => a.title.localeCompare(b.title, "ja"));
-      setActiveEvents(rows);
+      try {
+        const snap = await getDocs(collection(db, "events"));
+        const rows = snap.docs
+          .map((d) => {
+            const data = d.data() as { title?: string; creatorName?: string; status?: string };
+            return {
+              id: d.id,
+              title: data.title?.trim() || "イベント",
+              creatorName: data.creatorName?.trim() || "未設定",
+              status: data.status === "closed" ? "closed" : "active",
+            };
+          })
+          .filter((ev) => ev.status === "active")
+          .map(({ id, title, creatorName }) => ({ id, title, creatorName }));
+        rows.sort((a, b) => a.title.localeCompare(b.title, "ja"));
+        setActiveEvents(rows);
+      } catch (error) {
+        console.error("[join] active events load failed", error);
+        setActiveEvents([]);
+      }
     };
     void load();
   }, []);

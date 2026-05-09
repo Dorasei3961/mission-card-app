@@ -164,7 +164,7 @@ export default function EventAdminPage({ params }: Props) {
     const missionColl = collection(db, "events", eventId, "missions");
     let snapshot = await getDocs(missionColl);
     if (snapshot.empty) {
-      await Promise.all(
+      const seedResults = await Promise.allSettled(
         DEFAULT_MISSIONS_SEED.map((mission) =>
           setDoc(doc(db, "events", eventId, "missions", String(mission.id)), {
             ...mission,
@@ -174,6 +174,14 @@ export default function EventAdminPage({ params }: Props) {
           }),
         ),
       );
+      const seedFailureCount = seedResults.filter((it) => it.status === "rejected").length;
+      if (seedFailureCount > 0) {
+        console.error("[admin] default mission seed failed", {
+          eventId,
+          seedFailureCount,
+          results: seedResults,
+        });
+      }
       snapshot = await getDocs(missionColl);
     }
     const missionList = snapshot.docs
@@ -182,7 +190,11 @@ export default function EventAdminPage({ params }: Props) {
         ...normalizeMissionFromFirestore(missionDoc.id, missionDoc.data() as Record<string, unknown>),
       }))
       .sort((a, b) => a.order - b.order || a.id - b.id);
-    setMissions(missionList);
+    setMissions(
+      missionList.length > 0
+        ? missionList
+        : DEFAULT_MISSIONS_SEED.map((m) => ({ ...m, docId: String(m.id) })),
+    );
   };
 
   const loadParticipants = async () => {

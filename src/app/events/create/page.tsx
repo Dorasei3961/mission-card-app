@@ -27,6 +27,7 @@ export default function EventCreatePage() {
   const [adminPin, setAdminPin] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [warningMessage, setWarningMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [created, setCreated] = useState<CreatedSummary | null>(null);
   const [copyMessage, setCopyMessage] = useState("");
@@ -50,6 +51,7 @@ export default function EventCreatePage() {
 
     setPending(true);
     setMessage("");
+    setWarningMessage("");
     try {
       await signInAnonymously(auth);
       const authUid = auth.currentUser!.uid;
@@ -73,7 +75,7 @@ export default function EventCreatePage() {
         createdAt: serverTimestamp(),
       });
       const eventId = ref.id;
-      await Promise.all(
+      const seedResults = await Promise.allSettled(
         DEFAULT_MISSIONS_SEED.map((mission) =>
           setDoc(doc(db, "events", eventId, "missions", String(mission.id)), {
             ...mission,
@@ -83,13 +85,31 @@ export default function EventCreatePage() {
           }),
         ),
       );
+      const seedFailureCount = seedResults.filter((it) => it.status === "rejected").length;
+      if (seedFailureCount > 0) {
+        console.error("[event-create] default mission seed failed", {
+          eventId,
+          seedFailureCount,
+          results: seedResults,
+        });
+        setWarningMessage(
+          `イベントは作成されましたが、初期ミッション${seedFailureCount}件の作成に失敗しました。運営画面から追加してください。`,
+        );
+      }
       const ownerKey = "host";
-      await setDoc(doc(db, "events", eventId, "participants", ownerKey), {
-        name: creator,
-        totalPoints: 0,
-        joinedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      try {
+        await setDoc(doc(db, "events", eventId, "participants", ownerKey), {
+          name: creator,
+          totalPoints: 0,
+          joinedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (ownerParticipantError) {
+        console.error("[event-create] owner participant seed failed", {
+          eventId,
+          error: ownerParticipantError,
+        });
+      }
       setEventSession({ eventId, participantName: creator, uid: ownerKey });
       setCreated({
         eventId,
@@ -133,6 +153,9 @@ export default function EventCreatePage() {
             <p className="mt-2 text-sm leading-relaxed text-zinc-600">
               参加用パスワードや管理用PINは紛失しやすいので、必要に応じてメールに保存してください。運営画面でもいつでも確認できます。
             </p>
+            {warningMessage ? (
+              <p className="mt-2 text-xs font-semibold text-amber-700">{warningMessage}</p>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
