@@ -58,7 +58,6 @@ export default function AdminParticipantsPage({ params }: Props) {
   const [eventTitle, setEventTitle] = useState("");
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
   const [currentUid, setCurrentUid] = useState("");
-  const [ownerUid, setOwnerUid] = useState("");
   const [pinSession, setPinSession] = useState(false);
   const [eventResolved, setEventResolved] = useState(false);
   const [eventMissing, setEventMissing] = useState(false);
@@ -73,8 +72,7 @@ export default function AdminParticipantsPage({ params }: Props) {
   const [message, setMessage] = useState("");
   const [busyUid, setBusyUid] = useState("");
 
-  const isOwner = Boolean(currentUid && ownerUid && currentUid === ownerUid);
-  const canManage = isOwner || pinSession;
+  const canManage = pinSession;
   const canEdit = canManage && eventStatus === "active";
 
   useEffect(() => {
@@ -117,9 +115,8 @@ export default function AdminParticipantsPage({ params }: Props) {
         return;
       }
       setEventMissing(false);
-      const data = snap.data() as { title?: string; ownerUid?: string; status?: string };
+      const data = snap.data() as { title?: string; status?: string };
       setEventTitle(String(data.title ?? "イベント"));
-      setOwnerUid(String(data.ownerUid ?? ""));
       setEventStatus(data.status === "closed" ? "closed" : "active");
     });
     return () => unsub();

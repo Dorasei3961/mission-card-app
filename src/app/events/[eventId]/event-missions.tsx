@@ -24,7 +24,6 @@ import {
 } from "../../lib/mission-schema";
 import {
   clearEventSession,
-  getAdminAccess,
   getEventSession,
   setAdminAccess,
   setEventSession,
@@ -288,10 +287,6 @@ export function EventMissions({ eventId }: Props) {
   }, [visibleMissions]);
 
   const openAdminFlow = () => {
-    if (getAdminAccess(eventId)) {
-      router.push(`/admin/${eventId}`);
-      return;
-    }
     setAdminPinInput("");
     setAdminPinError("");
     setAdminPinModalOpen(true);

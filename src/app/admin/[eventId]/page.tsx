@@ -46,8 +46,6 @@ export default function EventAdminPage({ params }: Props) {
   const [isActiveNew, setIsActiveNew] = useState(true);
   const [rankingVisible, setRankingVisible] = useState(false);
   const [message, setMessage] = useState("");
-  const [currentUid, setCurrentUid] = useState("");
-  const [ownerUid, setOwnerUid] = useState("");
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
   const [pinSession, setPinSession] = useState(false);
   const [eventResolved, setEventResolved] = useState(false);
@@ -63,8 +61,8 @@ export default function EventAdminPage({ params }: Props) {
   const [adminPinDisplay, setAdminPinDisplay] = useState("");
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
 
-  const isOwner = Boolean(currentUid && ownerUid && currentUid === ownerUid);
-  const canManage = isOwner || pinSession;
+  /** Firebase のイベント作成者でも、運営UIは管理PIN認証後のみ（owner バイパスなし） */
+  const canManage = pinSession;
   const canEdit = canManage && eventStatus === "active";
 
   useEffect(() => {
@@ -77,7 +75,6 @@ export default function EventAdminPage({ params }: Props) {
         await signInAnonymously(auth);
         return;
       }
-      setCurrentUid(user.uid);
       setAuthReady(true);
     });
     return () => unsub();
@@ -103,7 +100,6 @@ export default function EventAdminPage({ params }: Props) {
       setEventResolved(true);
       if (!snap.exists()) {
         setEventTitle("イベントが見つかりません");
-        setOwnerUid("");
         setRankingVisible(false);
         setCreatorNameDisplay("");
         setJoinPasswordDisplay("");
@@ -117,7 +113,6 @@ export default function EventAdminPage({ params }: Props) {
         creatorName?: string;
         joinPassword?: unknown;
         adminPin?: unknown;
-        ownerUid?: string;
         rankingVisible?: boolean;
         password?: string;
         joinCode?: string;
@@ -130,7 +125,6 @@ export default function EventAdminPage({ params }: Props) {
         typeof data.joinPassword === "string" ? data.joinPassword : "",
       );
       setAdminPinDisplay(String(data.adminPin ?? "").trim());
-      setOwnerUid(String(data.ownerUid ?? ""));
       setRankingVisible(Boolean(data.rankingVisible));
       setFeatureMissionEnabled(resolveEventFeatures(data.features).mission);
       setEventStatus((data as { status?: string }).status === "closed" ? "closed" : "active");
