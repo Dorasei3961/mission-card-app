@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
@@ -14,24 +15,18 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
-import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
 import {
   DEFAULT_MISSIONS_SEED,
   type MissionFields,
   normalizeMissionFromFirestore,
 } from "../../lib/mission-schema";
-import {
-  clearEventSession,
-  getEventSession,
-  setAdminAccess,
-  setEventSession,
-} from "../../lib/event-session";
+import { clearEventSession, getEventSession, setEventSession } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
+import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../lib/participant-last-page";
 import { ParticipantBottomNav } from "./participant-bottom-nav";
-
-type ParticipantTab = "home" | "admin";
+import { useParticipantRankingLink } from "./use-participant-ranking-link";
 
 function parseCheckedMissionIdsFromFirestore(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -74,7 +69,6 @@ type Props = {
 
 export function EventMissions({ eventId }: Props) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<MissionFields[]>(DEFAULT_MISSIONS_SEED);
   const [checkedMissionIds, setCheckedMissionIds] = useState<number[]>([]);
@@ -84,12 +78,7 @@ export function EventMissions({ eventId }: Props) {
   const [isReady, setIsReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [canUseMissions, setCanUseMissions] = useState(false);
-  const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
-  const [participantTab, setParticipantTab] = useState<ParticipantTab>("home");
-  const [adminPinInput, setAdminPinInput] = useState("");
-  const [adminPinError, setAdminPinError] = useState("");
-  const [adminPinBusy, setAdminPinBusy] = useState(false);
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
   /** participants.totalPoints（ミッション保存・クイズ加点と同期） */
   const [liveParticipantTotalPts, setLiveParticipantTotalPts] = useState<number | null>(null);
@@ -116,21 +105,20 @@ export function EventMissions({ eventId }: Props) {
     return sum;
   }, [visibleMissions, checkedMissionIds, numberValues]);
 
+  const showRankingLink = useParticipantRankingLink(eventId);
+
   useEffect(() => {
     const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) {
-        setRankingVisible(false);
         return;
       }
       const data = snap.data() as {
         title?: string;
-        rankingVisible?: boolean;
         ownerUid?: string;
         status?: string;
         features?: unknown;
       };
       setEventTitle(String(data.title ?? "イベント"));
-      setRankingVisible(Boolean(data.rankingVisible));
       setIsClosed(data.status === "closed");
       const rf = resolveEventFeatures(data.features);
       setFeatureMissionEnabled(rf.mission);
@@ -140,13 +128,8 @@ export function EventMissions({ eventId }: Props) {
   }, [eventId]);
 
   useEffect(() => {
-    setParticipantTab(searchParams.get("tab") === "admin" ? "admin" : "home");
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (searchParams.get("tab") === "admin") return;
     recordParticipantMainPage(eventId, `/events/${eventId}`);
-  }, [eventId, searchParams]);
+  }, [eventId]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -174,13 +157,11 @@ export function EventMissions({ eventId }: Props) {
         await ensureDefaultAdminPinIfMissing(eventId);
         const eventData = eventSnap.data() as {
           title?: string;
-          rankingVisible?: boolean;
           ownerUid?: string;
           status?: string;
           features?: unknown;
         };
         setEventTitle(String(eventData.title ?? "イベント"));
-        setRankingVisible(Boolean(eventData.rankingVisible));
         setIsClosed(eventData.status === "closed");
         const rf = resolveEventFeatures(eventData.features);
         setFeatureMissionEnabled(rf.mission);
@@ -319,40 +300,6 @@ export function EventMissions({ eventId }: Props) {
     });
   }, [visibleMissions]);
 
-  const verifyAdminPin = async () => {
-    const entered = filterAdminPinInput(adminPinInput);
-    if (!isValidFourDigitAdminPin(entered)) {
-      setAdminPinError("4桁の数字を入力してください。");
-      return;
-    }
-    setAdminPinBusy(true);
-    setAdminPinError("");
-    try {
-      await ensureDefaultAdminPinIfMissing(eventId);
-      const snap = await getDoc(doc(db, "events", eventId));
-      if (!snap.exists()) {
-        setAdminPinError("イベントが見つかりません。");
-        return;
-      }
-      const pinStored = String((snap.data() as { adminPin?: unknown }).adminPin ?? "").trim();
-      if (!pinStored) {
-        setAdminPinError("このイベントには管理PINが設定されていません。");
-        return;
-      }
-      if (entered !== pinStored.trim()) {
-        setAdminPinError("PINが違います");
-        return;
-      }
-      setAdminAccess(eventId, true);
-      router.push(`/admin/${eventId}`);
-    } catch (e) {
-      console.error(e);
-      setAdminPinError("確認に失敗しました。");
-    } finally {
-      setAdminPinBusy(false);
-    }
-  };
-
   useEffect(() => {
     if (!isReady || !userId || !canUseMissions || isClosed) return;
 
@@ -478,7 +425,14 @@ export function EventMissions({ eventId }: Props) {
     isClosed,
   ]);
 
-  const showRankingLink = rankingVisible || isClosed;
+  const missionProgressLabel = (mission: MissionFields): string => {
+    if (mission.type === "checkbox") {
+      const done = checkedMissionIds.includes(mission.id) ? 1 : 0;
+      return `${done}/1`;
+    }
+    const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
+    return `${count}/10`;
+  };
 
   const goToTop = () => {
     clearEventSession();
@@ -486,209 +440,191 @@ export function EventMissions({ eventId }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-yellow-100 via-orange-100 to-red-100 pb-24">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4 p-4">
-        <nav
-          className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white/95 px-2.5 py-2 shadow-sm"
-          aria-label="イベント内ナビゲーション"
-        >
+    <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
+      <main className="mx-auto flex w-full max-w-md flex-col gap-4">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => goToTop()}
-            className="inline-flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-zinc-800 hover:bg-zinc-50 touch-manipulation"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-zinc-200 bg-white text-sm font-bold text-[#111827] shadow-sm touch-manipulation"
+            aria-label="トップへ"
           >
-            <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-sm">
-              ←
-            </span>
-            <span className="truncate text-sm font-bold">{eventTitle || "イベント"}</span>
+            ←
           </button>
-        </nav>
+        </div>
 
-        {participantTab === "home" && (
-          <>
-            <header className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
-              <p className="text-sm font-semibold text-amber-700">{eventTitle || "イベント"}</p>
-              <h1 className="text-2xl font-black tracking-wide text-zinc-900">
-                {participantName || "参加者"}さんの合計ポイント:{" "}
-                {(liveParticipantTotalPts ?? totalPoints).toLocaleString("ja-JP")} pt
-              </h1>
-              <p className="mt-1 text-xs text-zinc-600">記録した内容から自動計算された合計です。</p>
-              {isClosed ? (
-                <p className="mt-2 text-xs font-bold text-red-600">このイベントは終了しました（閲覧のみ）</p>
-              ) : null}
-              {errorMessage ? (
-                <p className="mt-2 text-xs font-semibold text-red-600">{errorMessage}</p>
-              ) : null}
-            </header>
+        <header>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold text-[#111827]">{eventTitle || "イベント"}</h1>
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                isClosed
+                  ? "bg-zinc-100 text-[#6B7280] ring-1 ring-zinc-200"
+                  : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200"
+              }`}
+            >
+              {isClosed ? "終了" : "開催中"}
+            </span>
+          </div>
+        </header>
 
-            {canUseMissions ? (
-              <section className="space-y-3">
-                {featureMissionEnabled ? visibleMissions.map((mission) => {
-              if (mission.type === "checkbox") {
-                const isChecked = checkedMissionIds.includes(mission.id);
-                return (
-                  <label
-                    key={mission.id}
-                    className="flex cursor-pointer items-start gap-4 rounded-2xl border-4 border-sky-300 bg-white p-4 shadow-[0_8px_0_#0284c7]"
-                  >
-                    <span className="flex shrink-0 items-start justify-center pt-1">
-                      <input
-                        type="checkbox"
-                        className="h-8 w-8 shrink-0 cursor-pointer rounded-md border-2 border-zinc-300 accent-emerald-600"
-                        checked={isChecked}
-                        disabled={!isReady || !!errorMessage || isClosed}
-                        onChange={() => {
-                          setCheckedMissionIds((prev) =>
-                            prev.includes(mission.id)
-                              ? prev.filter((id) => id !== mission.id)
-                              : [...prev, mission.id],
-                          );
-                        }}
-                      />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-base font-extrabold text-zinc-900">{mission.title}</h2>
-                      {mission.description.trim() ? (
-                        <p className="mt-1 text-sm text-zinc-600">{mission.description}</p>
-                      ) : null}
-                      <p className="mt-2 text-sm font-bold text-emerald-600">+{mission.points} pt</p>
-                    </div>
-                  </label>
-                );
-              }
-
-              const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
-              const linePoints = count * mission.pointPerUnit;
-              return (
-                <div
-                  key={mission.id}
-                  className="flex flex-col gap-3 rounded-2xl border-4 border-sky-300 bg-white p-4 shadow-[0_8px_0_#0284c7]"
-                >
-                  <h2 className="text-base font-extrabold text-zinc-900">{mission.title}</h2>
-                  {mission.description.trim() ? (
-                    <p className="text-sm text-zinc-600">{mission.description}</p>
-                  ) : null}
-                  <div className="flex items-center justify-center gap-5 px-1">
-                    <button
-                      type="button"
-                      disabled={!isReady || !!errorMessage || isClosed || count === 0}
-                      aria-label={`${mission.title}の数量を1減らす`}
-                      onClick={() =>
-                        setNumberValues((prev) => {
-                          const current = Math.max(0, Math.floor(prev[mission.id] ?? 0));
-                          const nextValue = Math.max(0, current - 1);
-                          const next = { ...prev };
-                          if (nextValue === 0) {
-                            delete next[mission.id];
-                          } else {
-                            next[mission.id] = nextValue;
-                          }
-                          return next;
-                        })
-                      }
-                      className="inline-flex h-14 min-h-[52px] min-w-[52px] shrink-0 touch-manipulation items-center justify-center rounded-2xl bg-zinc-200 text-2xl font-black leading-none text-zinc-800 shadow-[0_4px_0_#a1a1aa] transition-transform active:translate-y-px active:shadow-none disabled:pointer-events-none disabled:opacity-40"
-                    >
-                      −
-                    </button>
-                    <span
-                      className="min-w-[4rem] text-center text-3xl font-black tabular-nums leading-none text-zinc-900"
-                      aria-live="polite"
-                    >
-                      {count}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={!isReady || !!errorMessage || isClosed}
-                      aria-label={`${mission.title}の数量を1増やす`}
-                      onClick={() =>
-                        setNumberValues((prev) => {
-                          const current = Math.max(0, Math.floor(prev[mission.id] ?? 0));
-                          return { ...prev, [mission.id]: current + 1 };
-                        })
-                      }
-                      className="inline-flex h-14 min-h-[52px] min-w-[52px] shrink-0 touch-manipulation items-center justify-center rounded-2xl bg-sky-400 text-2xl font-black leading-none text-sky-950 shadow-[0_4px_0_#0369a1] transition-transform active:translate-y-px active:shadow-none disabled:opacity-50"
-                    >
-                      ＋
-                    </button>
-                  </div>
-                  <p className="text-center text-lg font-black text-emerald-600">+{linePoints} pt</p>
-                </div>
-              );
-            })
-                : (
-              <article className="rounded-2xl border-4 border-zinc-300 bg-white p-4 shadow-[0_8px_0_#a1a1aa]">
-                <h2 className="text-lg font-black text-zinc-900">ミッション機能は無効です</h2>
-                <p className="mt-2 text-sm text-zinc-600">
-                  このイベントではミッションが利用停止になっています。運営画面のイベント機能で設定を確認してください。
-                </p>
-              </article>
-            )}
-          </section>
-        ) : (
-          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            参加登録が必要です。参加画面から入り直してください。
+        <section className="rounded-2xl border border-white/80 bg-white p-4 shadow-sm">
+          <p className="text-sm font-semibold text-[#111827]">
+            {participantName || "参加者"}さんの合計ポイント
           </p>
-        )}
-          </>
-        )}
+          <p className="mt-2 text-3xl font-bold tabular-nums text-[#111827]">
+            {(liveParticipantTotalPts ?? totalPoints).toLocaleString("ja-JP")}{" "}
+            <span className="text-lg font-bold text-[#6B7280]">pt</span>
+          </p>
+          <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
+            記録した内容から自動計算された合計です。
+          </p>
+          {isClosed ? (
+            <p className="mt-3 text-xs font-bold text-[#EF4444]">このイベントは終了しました（閲覧のみ）</p>
+          ) : null}
+          {errorMessage ? (
+            <p className="mt-2 text-xs font-semibold text-[#EF4444]">{errorMessage}</p>
+          ) : null}
+        </section>
 
-        {participantTab === "admin" && (
-          <section
-            className="rounded-2xl border-2 border-sky-200 bg-white p-4 shadow-sm"
-            aria-labelledby="participant-admin-title"
-          >
-            <h2 id="participant-admin-title" className="text-lg font-black text-zinc-900">
-              運営管理PIN
-            </h2>
-            <p className="mt-1 text-sm text-zinc-600">
-              4桁の管理用PINを入力し、認証に成功した場合のみ運営画面へ進めます。
+        <section>
+          <h2 className="text-lg font-bold text-[#111827]">ミッション一覧</h2>
+          <p className="mt-1 text-sm text-[#6B7280]">
+            すべてのミッションに挑戦してポイントを集めよう！
+          </p>
+
+          {canUseMissions ? (
+            <div className="mt-4 flex flex-col gap-3">
+              {featureMissionEnabled ? (
+                visibleMissions.map((mission) => (
+                  <article
+                    key={mission.id}
+                    className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-[#7C3AED]">
+                        <Target className="h-6 w-6" strokeWidth={2} aria-hidden />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-base font-bold text-[#111827]">{mission.title}</h3>
+                        {mission.description.trim() ? (
+                          <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
+                            {mission.description}
+                          </p>
+                        ) : null}
+                        <p className="mt-1 text-sm font-semibold text-[#FBBF24]">
+                          {mission.type === "checkbox"
+                            ? `+${mission.points} pt`
+                            : `+${mission.pointPerUnit} pt / 回`}
+                        </p>
+                        <p className="mt-1 text-xs font-semibold text-[#7C3AED]">
+                          {missionProgressLabel(mission)} 達成
+                        </p>
+                      </div>
+                      <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-[#6B7280]" aria-hidden />
+                    </div>
+
+                    <div className="mt-4 border-t border-zinc-100 pt-4">
+                      {mission.type === "checkbox" ? (
+                        <label className="flex cursor-pointer items-center gap-3 touch-manipulation">
+                          <input
+                            type="checkbox"
+                            className="h-6 w-6 shrink-0 rounded-md border-2 border-zinc-300 accent-[#7C3AED]"
+                            checked={checkedMissionIds.includes(mission.id)}
+                            disabled={!isReady || !!errorMessage || isClosed}
+                            onChange={() => {
+                              setCheckedMissionIds((prev) =>
+                                prev.includes(mission.id)
+                                  ? prev.filter((id) => id !== mission.id)
+                                  : [...prev, mission.id],
+                              );
+                            }}
+                          />
+                          <span className="text-sm font-medium text-[#111827]">達成したらチェック</span>
+                        </label>
+                      ) : (
+                        (() => {
+                          const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
+                          const linePoints = count * mission.pointPerUnit;
+                          return (
+                            <div className="flex flex-col gap-3">
+                              {mission.description.trim() ? (
+                                <p className="text-xs text-[#6B7280]">{mission.description}</p>
+                              ) : null}
+                              <div className="flex items-center justify-center gap-6">
+                                <button
+                                  type="button"
+                                  disabled={!isReady || !!errorMessage || isClosed || count === 0}
+                                  aria-label={`${mission.title}の数量を1減らす`}
+                                  onClick={() =>
+                                    setNumberValues((prev) => {
+                                      const current = Math.max(0, Math.floor(prev[mission.id] ?? 0));
+                                      const nextValue = Math.max(0, current - 1);
+                                      const next = { ...prev };
+                                      if (nextValue === 0) delete next[mission.id];
+                                      else next[mission.id] = nextValue;
+                                      return next;
+                                    })
+                                  }
+                                  className="inline-flex h-12 min-w-[48px] items-center justify-center rounded-[14px] bg-zinc-200 text-xl font-bold text-[#111827] disabled:opacity-40 touch-manipulation"
+                                >
+                                  −
+                                </button>
+                                <span
+                                  className="min-w-[3rem] text-center text-2xl font-bold tabular-nums text-[#111827]"
+                                  aria-live="polite"
+                                >
+                                  {count}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={!isReady || !!errorMessage || isClosed}
+                                  aria-label={`${mission.title}の数量を1増やす`}
+                                  onClick={() =>
+                                    setNumberValues((prev) => {
+                                      const current = Math.max(0, Math.floor(prev[mission.id] ?? 0));
+                                      return { ...prev, [mission.id]: current + 1 };
+                                    })
+                                  }
+                                  className="inline-flex h-12 min-w-[48px] items-center justify-center rounded-[14px] bg-[#7C3AED] text-xl font-bold text-white disabled:opacity-50 touch-manipulation"
+                                >
+                                  ＋
+                                </button>
+                              </div>
+                              <p className="text-center text-sm font-bold text-[#22C55E]">
+                                +{linePoints} pt
+                              </p>
+                            </div>
+                          );
+                        })()
+                      )}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <h3 className="text-base font-bold text-[#111827]">ミッション機能は無効です</h3>
+                  <p className="mt-2 text-sm text-[#6B7280]">
+                    このイベントではミッションが利用停止になっています。
+                  </p>
+                </article>
+              )}
+            </div>
+          ) : (
+            <p className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              参加登録が必要です。参加画面から入り直してください。
             </p>
-            {!canUseMissions ? (
-              <p className="mt-3 text-sm font-semibold text-amber-800">このイベントに参加していないため、管理に入れません。</p>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="\d{4}"
-                  maxLength={4}
-                  autoComplete="off"
-                  value={adminPinInput}
-                  onChange={(e) => {
-                    setAdminPinInput(filterAdminPinInput(e.target.value));
-                    if (adminPinError) setAdminPinError("");
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void verifyAdminPin();
-                  }}
-                  className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
-                  placeholder="例：1234"
-                  disabled={adminPinBusy}
-                />
-                {adminPinError ? (
-                  <p className="mt-2 text-sm font-semibold text-red-600">{adminPinError}</p>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={adminPinBusy}
-                  onClick={() => void verifyAdminPin()}
-                  className="mt-4 w-full rounded-xl bg-sky-600 py-3 text-base font-bold text-white disabled:opacity-50 touch-manipulation"
-                >
-                  {adminPinBusy ? "確認中…" : "認証して運営画面へ"}
-                </button>
-              </>
-            )}
-          </section>
-        )}
+          )}
+        </section>
       </main>
 
       <ParticipantBottomNav
         eventId={eventId}
         showRankingLink={showRankingLink}
-        homeNavActive={participantTab === "home"}
+        homeNavActive
         featuresNavActive={false}
         rankingNavActive={false}
-        adminNavActive={participantTab === "admin"}
+        adminNavActive={false}
       />
     </div>
   );

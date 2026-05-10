@@ -3,9 +3,10 @@
 import { ChevronLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
+import { getLastEventPage, recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { EventQuiz } from "../features/event-quiz";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
-import { getLastEventPage, recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
 
 type Props = { eventId: string };
@@ -19,19 +20,19 @@ export function ParticipantQuizShell({ eventId }: Props) {
   }, [eventId]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-violet-50 via-white to-zinc-50 p-4 pb-24">
-      <header className="mx-auto mb-4 flex max-w-md items-center gap-2">
+    <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
+      <header className="mx-auto mb-4 flex max-w-md items-center gap-3">
         <button
           type="button"
           onClick={() => router.push(getLastEventPage(eventId))}
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-700 shadow-sm touch-manipulation"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-zinc-200 bg-white text-[#111827] shadow-sm touch-manipulation"
           aria-label="直前の画面へ戻る"
         >
           <ChevronLeft className="h-5 w-5" strokeWidth={2} aria-hidden />
         </button>
-        <div className="min-w-0 flex-1 rounded-xl border border-violet-100 bg-white px-3 py-2 shadow-sm">
-          <p className="text-[11px] font-semibold text-violet-600">クイズ</p>
-          <h1 className="truncate text-sm font-bold text-zinc-900">出題中のクイズに回答</h1>
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-[#7C3AED]">クイズ</p>
+          <h1 className="truncate text-lg font-bold text-[#111827]">出題中のクイズに回答</h1>
         </div>
       </header>
       <main className="mx-auto max-w-md">
@@ -40,7 +41,7 @@ export function ParticipantQuizShell({ eventId }: Props) {
       <ParticipantBottomNav
         eventId={eventId}
         showRankingLink={showRankingLink}
-        homeNavActive
+        homeNavActive={false}
         featuresNavActive={false}
         rankingNavActive={false}
         adminNavActive={false}

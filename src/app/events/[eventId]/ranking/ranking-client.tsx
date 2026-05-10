@@ -1,10 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
-import { getLastEventPage } from "../../../lib/participant-last-page";
+import { useEffect, useMemo, useState } from "react";
+import { auth, db } from "../../../lib/firebase";
+import { getEventSession } from "../../../lib/event-session";
+import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
 
 type Participant = {
@@ -17,13 +18,16 @@ type Props = {
   eventId: string;
 };
 
+type RankTab = "all" | "team" | "self";
+
 export function RankingClient({ eventId }: Props) {
-  const router = useRouter();
   const [eventTitle, setEventTitle] = useState("ランキング");
   const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<RankTab>("all");
+  const [myParticipantKey, setMyParticipantKey] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -44,6 +48,20 @@ export function RankingClient({ eventId }: Props) {
       setLoading(false);
     });
     return () => unsub();
+  }, [eventId]);
+
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setMyParticipantKey(null);
+        return;
+      }
+      const session = getEventSession();
+      const participantKey =
+        session && session.eventId === eventId && session.uid ? session.uid : user.uid;
+      setMyParticipantKey(participantKey);
+    });
+    return () => unsubAuth();
   }, [eventId]);
 
   useEffect(() => {
@@ -71,59 +89,110 @@ export function RankingClient({ eventId }: Props) {
     [participants],
   );
 
+  const myRankRow = useMemo(() => {
+    if (!myParticipantKey) return null;
+    return ranked.find((r) => r.uid === myParticipantKey) ?? null;
+  }, [ranked, myParticipantKey]);
+
   const showRankingNav = rankingVisible || isClosed;
 
+  const tabButton = (id: RankTab, label: string) => (
+    <button
+      key={id}
+      type="button"
+      role="tab"
+      aria-selected={tab === id}
+      onClick={() => setTab(id)}
+      className={`min-w-0 flex-1 rounded-xl py-2 text-xs font-bold transition touch-manipulation ${
+        tab === id ? "bg-[#7C3AED] text-white shadow-sm" : "bg-white text-[#6B7280] ring-1 ring-zinc-100"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
+  const Row = ({ row }: { row: (typeof ranked)[0] }) => {
+    const isSelf = myParticipantKey !== null && row.uid === myParticipantKey;
+    const initial = row.name.slice(0, 1) || "?";
+    return (
+      <div
+        className={`flex items-center gap-3 rounded-2xl border border-zinc-100 px-4 py-3 shadow-sm ${
+          isSelf ? "bg-violet-50 ring-1 ring-[#7C3AED]/20" : "bg-white"
+        }`}
+      >
+        <span className="w-8 shrink-0 text-center text-lg font-bold tabular-nums text-[#111827]">
+          {row.rank}
+        </span>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-[#7C3AED]">
+          {initial}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#111827]">{row.name}</span>
+        <span className="shrink-0 text-sm font-bold tabular-nums text-[#111827]">{row.totalPoints} pt</span>
+      </div>
+    );
+  };
+
+  const listForTab = (): typeof ranked => {
+    if (tab === "self" && myRankRow) {
+      const idx = ranked.findIndex((r) => r.uid === myRankRow.uid);
+      const start = Math.max(0, idx - 2);
+      const end = Math.min(ranked.length, idx + 3);
+      return ranked.slice(start, end);
+    }
+    return ranked;
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-violet-100 via-sky-100 to-cyan-100 p-4 pb-24">
+    <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
-        <header className="rounded-2xl border-4 border-violet-300 bg-white p-4 shadow-[0_8px_0_#7c3aed]">
-          <p className="text-sm font-semibold text-violet-700">{eventTitle}</p>
-          <h1 className="text-2xl font-black text-zinc-900">ランキング</h1>
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              onClick={() => router.push(getLastEventPage(eventId))}
-              className="inline-flex rounded-full bg-zinc-500 px-4 py-2 text-sm font-bold text-white touch-manipulation"
-            >
-              前の画面へ
-            </button>
-          </div>
+        <header>
+          <h1 className="text-xl font-bold text-[#111827]">ランキング</h1>
+          <p className="mt-1 text-sm text-[#6B7280]">{eventTitle} · みんなのポイントランキング</p>
         </header>
 
         {!loading && !rankingVisible && !isClosed ? (
-          <section className="rounded-2xl border-4 border-zinc-300 bg-white p-5 text-center shadow-[0_8px_0_#a1a1aa]">
-            <p className="text-base font-bold text-zinc-800">現在ランキングは非公開です</p>
+          <section className="rounded-2xl border border-zinc-100 bg-white p-6 text-center shadow-sm">
+            <p className="text-sm font-bold text-[#111827]">現在ランキングは非公開です</p>
           </section>
         ) : (
-          <section className="space-y-2">
-            {ranked.map((row) => {
-              const topStyle =
-                row.rank === 1
-                  ? "border-yellow-300 bg-yellow-100"
-                  : row.rank === 2
-                    ? "border-slate-300 bg-slate-100"
-                    : row.rank === 3
-                      ? "border-amber-300 bg-amber-100"
-                      : "border-sky-200 bg-white";
-              return (
-                <div key={row.uid} className={`rounded-xl border-2 p-3 shadow-sm ${topStyle}`}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-lg font-black text-zinc-900">#{row.rank}</span>
-                    <span className="text-base font-bold text-zinc-900">{row.name}</span>
-                    <span className="text-sm font-extrabold text-emerald-700">
-                      {row.totalPoints} pt
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-            {!ranked.length && loading ? (
-              <p className="text-center text-sm text-zinc-600">読み込み中…</p>
+          <>
+            <div role="tablist" aria-label="ランキングの表示切替" className="flex gap-2">
+              {tabButton("all", "全体")}
+              {tabButton("team", "同じチーム")}
+              {tabButton("self", "自分の順位")}
+            </div>
+
+            {tab === "team" ? (
+              <p className="rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2 text-[11px] font-medium text-amber-900">
+                チーム情報はまだ連携されていません。全体ランキングと同じ一覧を表示しています。
+              </p>
             ) : null}
-            {!ranked.length && !loading ? (
-              <p className="text-center text-sm text-zinc-600">参加者データがありません。</p>
+
+            {tab === "self" && myRankRow ? (
+              <div className="rounded-2xl border border-[#7C3AED]/25 bg-white p-4 shadow-sm">
+                <p className="text-xs font-semibold text-[#6B7280]">あなたの順位</p>
+                <p className="mt-1 text-2xl font-bold text-[#7C3AED]">
+                  {myRankRow.rank}
+                  <span className="text-base font-semibold text-[#111827]"> 位</span>
+                </p>
+                <p className="mt-1 text-sm text-[#111827]">
+                  {myRankRow.name} · {myRankRow.totalPoints} pt
+                </p>
+              </div>
             ) : null}
-          </section>
+
+            <section className="flex flex-col gap-3">
+              {listForTab().map((row) => (
+                <Row key={row.uid} row={row} />
+              ))}
+              {!ranked.length && loading ? (
+                <p className="text-center text-sm text-[#6B7280]">読み込み中…</p>
+              ) : null}
+              {!ranked.length && !loading ? (
+                <p className="text-center text-sm text-[#6B7280]">参加者データがありません。</p>
+              ) : null}
+            </section>
+          </>
         )}
       </main>
       <ParticipantBottomNav
@@ -137,4 +206,3 @@ export function RankingClient({ eventId }: Props) {
     </div>
   );
 }
-

@@ -17,7 +17,6 @@ import {
 import {
   BarChart3,
   Bell,
-  CalendarDays,
   CheckCircle2,
   ChevronRight,
   LayoutGrid,
@@ -43,7 +42,6 @@ import {
 
 type AdminMission = MissionFields & { docId: string };
 type ParticipantSummary = { uid: string; name: string; totalPoints: number; completedCount: number };
-type FeatureTab = "mission" | "quiz" | "bingo" | "roulette";
 type Props = { params: Promise<{ eventId: string }> };
 
 const DEFAULT_CATEGORY_COLOR = "custom";
@@ -80,10 +78,9 @@ export default function EventAdminPage({ params }: Props) {
   const [createdAtDisplay, setCreatedAtDisplay] = useState("—");
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [featureTab, setFeatureTab] = useState<FeatureTab>("mission");
   const [missionEditorOpen, setMissionEditorOpen] = useState(false);
 
-  const featureTabsRef = useRef<HTMLDivElement>(null);
+  const missionHubRef = useRef<HTMLDivElement>(null);
   const detailSettingsRef = useRef<HTMLDivElement>(null);
 
   /** Firebase のイベント作成者でも、運営UIは管理PIN認証後のみ（owner バイパスなし） */
@@ -453,13 +450,18 @@ export default function EventAdminPage({ params }: Props) {
     return { activeCount, achievementSum, achievementRate, participantCount: pc };
   }, [missions, participants]);
 
+  const totalPointsSum = useMemo(
+    () => participants.reduce((s, p) => s + p.totalPoints, 0),
+    [participants],
+  );
+
   const qrImageSrc =
     joinUrl.length > 0
       ? `https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(joinUrl)}`
       : "";
 
-  const scrollToFeatures = () => {
-    featureTabsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollToMissionHub = () => {
+    missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const scrollToDetailSettings = () => {
@@ -542,13 +544,6 @@ export default function EventAdminPage({ params }: Props) {
     );
   }
 
-  const tabDefs: { id: FeatureTab; label: string }[] = [
-    { id: "mission", label: "ミッション" },
-    { id: "quiz", label: "クイズ" },
-    { id: "bingo", label: "ビンゴ" },
-    { id: "roulette", label: "ルーレット" },
-  ];
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-violet-50/90 to-zinc-50 pb-28">
       <main className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pt-4">
@@ -562,7 +557,7 @@ export default function EventAdminPage({ params }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
-                運営管理画面
+                運営ダッシュボード
               </p>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <h1 className="truncate text-xl font-bold text-zinc-900">{eventTitle || "イベント"}</h1>
@@ -593,10 +588,10 @@ export default function EventAdminPage({ params }: Props) {
             </div>
             <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-500">
-                <CalendarDays className="h-3.5 w-3.5 text-violet-500" strokeWidth={2} aria-hidden />
-                作成日
+                <BarChart3 className="h-3.5 w-3.5 text-violet-500" strokeWidth={2} aria-hidden />
+                合計ポイント
               </div>
-              <p className="mt-0.5 text-sm font-bold text-zinc-900">{createdAtDisplay}</p>
+              <p className="mt-0.5 text-sm font-bold text-zinc-900">{totalPointsSum.toLocaleString("ja-JP")} pt</p>
             </div>
           </div>
         </header>
@@ -619,7 +614,7 @@ export default function EventAdminPage({ params }: Props) {
             </Link>
             <button
               type="button"
-              onClick={scrollToFeatures}
+              onClick={scrollToMissionHub}
               className="flex flex-col items-center gap-1 rounded-xl py-2 text-[10px] font-semibold text-zinc-700 transition hover:bg-violet-50 touch-manipulation"
             >
               <LayoutGrid className="h-5 w-5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
@@ -644,25 +639,57 @@ export default function EventAdminPage({ params }: Props) {
           </div>
         </section>
 
-        <section ref={featureTabsRef} id="admin-feature-tabs" className="rounded-2xl border border-violet-100 bg-white p-3 shadow-sm">
-          <div className="flex gap-1 rounded-xl bg-zinc-100 p-1">
-            {tabDefs.map((t) => (
+        <section ref={missionHubRef} id="admin-feature-hub" className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+          <h2 className="text-base font-bold text-zinc-900">機能管理</h2>
+          <p className="mt-1 text-xs text-zinc-600">ミッション・クイズなどのコンテンツを運営します。</p>
+          <ul className="mt-4 space-y-2">
+            <li>
               <button
-                key={t.id}
                 type="button"
-                onClick={() => setFeatureTab(t.id)}
-                className={`min-w-0 flex-1 rounded-lg py-2 text-[11px] font-bold transition touch-manipulation ${
-                  featureTab === t.id ? "bg-[#7C3AED] text-white shadow-sm" : "text-zinc-600 hover:text-zinc-900"
-                }`}
+                onClick={() => {
+                  setMissionEditorOpen(true);
+                  requestAnimationFrame(() =>
+                    missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  );
+                }}
+                className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-left text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
               >
-                {t.label}
+                <span>ミッション</span>
+                <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
               </button>
-            ))}
-          </div>
+            </li>
+            <li>
+              <Link
+                href={`/admin/${eventId}/quiz`}
+                className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
+              >
+                <span>クイズ</span>
+                <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
+              </Link>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => window.alert("今後追加予定です")}
+                className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-left text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
+              >
+                <span>ビンゴ</span>
+                <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                onClick={() => window.alert("今後追加予定です")}
+                className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-left text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
+              >
+                <span>ルーレット</span>
+                <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
+              </button>
+            </li>
+          </ul>
 
-          <div className="mt-4">
-            {featureTab === "mission" ? (
-              <div className="space-y-3">
+          <div className="mt-6 space-y-3">
                 <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <h2 className="text-base font-bold text-zinc-900">ミッション管理</h2>
@@ -704,7 +731,7 @@ export default function EventAdminPage({ params }: Props) {
                   </button>
                   {!featureMissionEnabled ? (
                     <p className="mt-2 text-[11px] font-semibold text-amber-700">
-                      イベント設定でミッション機能がOFFの可能性があります。機能ハブで確認してください。
+                      イベント設定でミッション機能がOFFの可能性があります。機能フラグを確認してください。
                     </p>
                   ) : null}
                 </div>
@@ -973,18 +1000,9 @@ export default function EventAdminPage({ params }: Props) {
                   href={`/events/${eventId}/features?from=admin`}
                   className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 touch-manipulation"
                 >
-                  <span>機能ハブ（ミッションほか）</span>
+                  <span>参加者・機能一覧を開く</span>
                   <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
                 </Link>
-              </div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-8 text-center">
-                <p className="text-sm font-bold text-zinc-700">
-                  {featureTab === "quiz" ? "クイズ" : featureTab === "bingo" ? "ビンゴ" : "ルーレット"}
-                </p>
-                <p className="mt-2 text-xs text-zinc-500">未利用 · 今後追加予定です。</p>
-              </div>
-            )}
           </div>
         </section>
 
@@ -1013,6 +1031,10 @@ export default function EventAdminPage({ params }: Props) {
                   <div>
                     <dt className="font-semibold text-zinc-600">イベント名</dt>
                     <dd className="mt-0.5 break-all font-medium text-zinc-900">{eventTitle || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-semibold text-zinc-600">作成日</dt>
+                    <dd className="mt-0.5 font-medium text-zinc-900">{createdAtDisplay}</dd>
                   </div>
                   <div>
                     <dt className="font-semibold text-zinc-600">作成者名</dt>

@@ -9,6 +9,7 @@ function isAllowedStoredPath(eventId: string, path: string): boolean {
   if (!path.startsWith(prefix)) return false;
   if (path.includes("/ranking")) return false;
   if (path.includes("/admin")) return false;
+  if (path.includes("/manage")) return false;
   return true;
 }
 

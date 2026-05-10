@@ -32,7 +32,10 @@ export function EventQuiz({ eventId }: Props) {
   const [quizEnabled, setQuizEnabled] = useState(false);
   const [eventClosed, setEventClosed] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState<QuizDoc | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  /** 確定した回答の選択肢インデックス（Firestore と同期） */
+  const [answeredIndex, setAnsweredIndex] = useState<number | null>(null);
+  /** 送信前に選択中のインデックス */
+  const [draftChoice, setDraftChoice] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<"correct" | "wrong" | "already" | null>(null);
   const [timeUp, setTimeUp] = useState(false);
@@ -103,6 +106,12 @@ export function EventQuiz({ eventId }: Props) {
   const [existingAnswer, setExistingAnswer] = useState(false);
 
   useEffect(() => {
+    setDraftChoice(null);
+    setAnsweredIndex(null);
+    setResult(null);
+  }, [activeQuiz?.id]);
+
+  useEffect(() => {
     if (!authUid || !activeQuiz) {
       setExistingAnswer(false);
       return;
@@ -110,11 +119,14 @@ export function EventQuiz({ eventId }: Props) {
     const aid = `${activeQuiz.id}_${authUid}`;
     const unsub = onSnapshot(doc(db, "events", eventId, "quizAnswers", aid), (snap) => {
       setExistingAnswer(snap.exists());
-      if (snap.exists()) {
-        const d = snap.data() as { isCorrect?: boolean };
-        setResult(d.isCorrect ? "correct" : "wrong");
-        setSelectedIndex(null);
+      if (!snap.exists()) {
+        setAnsweredIndex(null);
+        setResult(null);
+        return;
       }
+      const d = snap.data() as { isCorrect?: boolean; selectedIndex?: number };
+      setResult(d.isCorrect ? "correct" : "wrong");
+      setAnsweredIndex(typeof d.selectedIndex === "number" ? d.selectedIndex : null);
     });
     return () => unsub();
   }, [eventId, authUid, activeQuiz?.id]);
@@ -153,6 +165,7 @@ export function EventQuiz({ eventId }: Props) {
   const submitAnswer = async (idx: number) => {
     if (!activeQuiz || !participantDocId || !authUid || !canPlay || eventClosed || timeUp) return;
     if (existingAnswer) return;
+    if (idx < 0 || idx >= activeQuiz.choices.length) return;
     setSubmitting(true);
     setError("");
     try {
@@ -215,7 +228,7 @@ export function EventQuiz({ eventId }: Props) {
       }
 
       setResult(isCorrect ? "correct" : "wrong");
-      setSelectedIndex(idx);
+      setAnsweredIndex(idx);
     } catch (e) {
       console.error(e);
       setError("回答の送信に失敗しました。");
@@ -260,7 +273,8 @@ export function EventQuiz({ eventId }: Props) {
     );
   }
 
-  const disabled = !!eventClosed || !!submitting || existingAnswer || timeUp;
+  const locked = !!eventClosed || !!submitting || existingAnswer || timeUp;
+  const choiceSelectable = !locked;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-sm">
@@ -279,10 +293,10 @@ export function EventQuiz({ eventId }: Props) {
           ) : null}
         </div>
         <h2 className="mt-2 text-base font-bold leading-snug text-zinc-900">{activeQuiz.question}</h2>
-        <p className="mt-1 text-[11px] text-zinc-500">正解で +{activeQuiz.points} pt</p>
+        <p className="mt-1 text-[11px] text-[#6B7280]">正解で +{activeQuiz.points} pt</p>
       </div>
 
-      <div className="space-y-2 p-4">
+      <div className="space-y-3 p-4">
         {eventClosed ? (
           <p className="text-xs font-semibold text-red-600">イベントは終了しているため回答できません。</p>
         ) : null}
@@ -291,22 +305,27 @@ export function EventQuiz({ eventId }: Props) {
         ) : null}
 
         {activeQuiz.choices.map((label, i) => {
-          const isSel = selectedIndex === i;
+          const isDraft = draftChoice === i && !existingAnswer;
+          const isAnsweredPick = answeredIndex === i;
+          const showSel = isDraft || isAnsweredPick;
           return (
             <button
               key={i}
               type="button"
-              disabled={disabled}
-              onClick={() => void submitAnswer(i)}
-              className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition touch-manipulation ${
-                disabled
-                  ? "border-zinc-100 bg-zinc-50 text-zinc-400"
-                  : isSel
-                    ? "border-violet-400 bg-violet-50 text-violet-900 ring-2 ring-violet-200"
-                    : "border-zinc-200 bg-white text-zinc-900 hover:border-violet-200 hover:bg-violet-50/50"
+              disabled={!choiceSelectable}
+              onClick={() => {
+                if (!choiceSelectable) return;
+                setDraftChoice(i);
+              }}
+              className={`flex min-h-[64px] w-full items-center gap-3 rounded-[14px] border px-3 py-3 text-left text-sm font-semibold text-[#111827] transition touch-manipulation ${
+                locked && !showSel
+                  ? "border-zinc-100 bg-zinc-50 text-[#6B7280]"
+                  : showSel
+                    ? "border-[#7C3AED] bg-violet-50 text-[#111827] ring-2 ring-[#7C3AED]/25"
+                    : "border-zinc-200 bg-white hover:border-violet-200 hover:bg-violet-50/40"
               }`}
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-100 text-xs font-bold text-[#7C3AED]">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-violet-100 text-xs font-bold text-[#7C3AED]">
                 {i + 1}
               </span>
               <span className="min-w-0 flex-1">{label}</span>
@@ -314,23 +333,38 @@ export function EventQuiz({ eventId }: Props) {
           );
         })}
 
+        {!existingAnswer && !timeUp && !eventClosed ? (
+          <button
+            type="button"
+            disabled={locked || draftChoice === null}
+            onClick={() => draftChoice !== null && void submitAnswer(draftChoice)}
+            className="mt-2 flex h-12 w-full items-center justify-center rounded-[14px] bg-[#7C3AED] text-base font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
+          >
+            {submitting ? "送信中…" : "回答する"}
+          </button>
+        ) : null}
+
         {existingAnswer || result ? (
           <div
             className={`mt-3 rounded-xl px-3 py-2 text-center text-sm font-bold ${
               result === "correct"
-                ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-100"
+                ? "bg-emerald-50 text-[#22C55E] ring-1 ring-emerald-100"
                 : result === "wrong"
-                  ? "bg-amber-50 text-amber-900 ring-1 ring-amber-100"
-                  : "bg-zinc-100 text-zinc-700"
+                  ? "bg-red-50 text-[#EF4444] ring-1 ring-red-100"
+                  : result === "already"
+                    ? "bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200"
+                    : "bg-zinc-100 text-zinc-700"
             }`}
           >
             {result === "correct"
               ? `正解！ +${activeQuiz.points} pt`
               : result === "wrong"
-                ? "不正解でした"
-                : existingAnswer
+                ? "不正解"
+                : result === "already"
                   ? "回答済みです"
-                  : null}
+                  : existingAnswer
+                    ? "回答済みです"
+                    : null}
           </div>
         ) : null}
 
