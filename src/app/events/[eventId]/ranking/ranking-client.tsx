@@ -1,9 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { db } from "../../../lib/firebase";
+import { getLastEventPage } from "../../../lib/participant-last-page";
+import { ParticipantBottomNav } from "../participant-bottom-nav";
 
 type Participant = {
   uid: string;
@@ -16,6 +18,7 @@ type Props = {
 };
 
 export function RankingClient({ eventId }: Props) {
+  const router = useRouter();
   const [eventTitle, setEventTitle] = useState("ランキング");
   const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
@@ -68,19 +71,22 @@ export function RankingClient({ eventId }: Props) {
     [participants],
   );
 
+  const showRankingNav = rankingVisible || isClosed;
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-violet-100 via-sky-100 to-cyan-100 p-4">
+    <div className="min-h-screen bg-gradient-to-b from-violet-100 via-sky-100 to-cyan-100 p-4 pb-24">
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
         <header className="rounded-2xl border-4 border-violet-300 bg-white p-4 shadow-[0_8px_0_#7c3aed]">
           <p className="text-sm font-semibold text-violet-700">{eventTitle}</p>
           <h1 className="text-2xl font-black text-zinc-900">ランキング</h1>
           <div className="mt-3 flex gap-2">
-            <Link
-              href={`/events/${eventId}`}
-              className="inline-flex rounded-full bg-zinc-500 px-4 py-2 text-sm font-bold text-white"
+            <button
+              type="button"
+              onClick={() => router.push(getLastEventPage(eventId))}
+              className="inline-flex rounded-full bg-zinc-500 px-4 py-2 text-sm font-bold text-white touch-manipulation"
             >
-              イベントへ戻る
-            </Link>
+              前の画面へ
+            </button>
           </div>
         </header>
 
@@ -120,6 +126,14 @@ export function RankingClient({ eventId }: Props) {
           </section>
         )}
       </main>
+      <ParticipantBottomNav
+        eventId={eventId}
+        showRankingLink={showRankingNav}
+        homeNavActive={false}
+        featuresNavActive={false}
+        rankingNavActive
+        adminNavActive={false}
+      />
     </div>
   );
 }

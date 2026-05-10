@@ -5,6 +5,9 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "../../../lib/firebase";
 import { resolveEventFeatures } from "../../../lib/event-features";
+import { recordParticipantMainPage } from "../../../lib/participant-last-page";
+import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { useParticipantRankingLink } from "../use-participant-ranking-link";
 import { QuizAdminPanel } from "./quiz-admin-panel";
 import { EventQuiz } from "./event-quiz";
 
@@ -24,10 +27,16 @@ export function EventFeaturesClient({ eventId }: Props) {
   const [features, setFeatures] = useState(resolveEventFeatures(undefined));
   const [fromAdmin, setFromAdmin] = useState(false);
   const [tab, setTab] = useState<FeatureTab>("mission");
+  const showRankingLink = useParticipantRankingLink(eventId);
 
   useEffect(() => {
     setFromAdmin(readFromAdminFromUrl());
   }, []);
+
+  useEffect(() => {
+    if (fromAdmin) return;
+    recordParticipantMainPage(eventId, `/events/${eventId}/features`);
+  }, [eventId, fromAdmin]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -55,7 +64,7 @@ export function EventFeaturesClient({ eventId }: Props) {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-violet-50 via-white to-zinc-50 p-4 pb-10">
+    <div className={`min-h-screen bg-gradient-to-b from-violet-50 via-white to-zinc-50 p-4 ${fromAdmin ? "pb-10" : "pb-24"}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
         <header className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-violet-600">{eventTitle}</p>
@@ -173,6 +182,16 @@ export function EventFeaturesClient({ eventId }: Props) {
           </section>
         ) : null}
       </main>
+      {!fromAdmin ? (
+        <ParticipantBottomNav
+          eventId={eventId}
+          showRankingLink={showRankingLink}
+          homeNavActive={false}
+          featuresNavActive
+          rankingNavActive={false}
+          adminNavActive={false}
+        />
+      ) : null}
     </div>
   );
 }

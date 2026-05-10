@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
@@ -29,9 +28,10 @@ import {
   setEventSession,
 } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
-import { Home, ChevronRight, LayoutGrid, Shield, Trophy } from "lucide-react";
+import { recordParticipantMainPage } from "../../lib/participant-last-page";
+import { ParticipantBottomNav } from "./participant-bottom-nav";
 
-type ParticipantTab = "home" | "features" | "admin";
+type ParticipantTab = "home" | "admin";
 
 function parseCheckedMissionIdsFromFirestore(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -74,6 +74,7 @@ type Props = {
 
 export function EventMissions({ eventId }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<MissionFields[]>(DEFAULT_MISSIONS_SEED);
   const [checkedMissionIds, setCheckedMissionIds] = useState<number[]>([]);
@@ -90,7 +91,6 @@ export function EventMissions({ eventId }: Props) {
   const [adminPinError, setAdminPinError] = useState("");
   const [adminPinBusy, setAdminPinBusy] = useState(false);
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
-  const [featureQuizEnabled, setFeatureQuizEnabled] = useState(false);
   /** participants.totalPoints（ミッション保存・クイズ加点と同期） */
   const [liveParticipantTotalPts, setLiveParticipantTotalPts] = useState<number | null>(null);
 
@@ -134,11 +134,19 @@ export function EventMissions({ eventId }: Props) {
       setIsClosed(data.status === "closed");
       const rf = resolveEventFeatures(data.features);
       setFeatureMissionEnabled(rf.mission);
-      setFeatureQuizEnabled(rf.quiz);
     });
 
     return () => unsubEvent();
   }, [eventId]);
+
+  useEffect(() => {
+    setParticipantTab(searchParams.get("tab") === "admin" ? "admin" : "home");
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "admin") return;
+    recordParticipantMainPage(eventId, `/events/${eventId}`);
+  }, [eventId, searchParams]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -176,7 +184,6 @@ export function EventMissions({ eventId }: Props) {
         setIsClosed(eventData.status === "closed");
         const rf = resolveEventFeatures(eventData.features);
         setFeatureMissionEnabled(rf.mission);
-        setFeatureQuizEnabled(rf.quiz);
 
         const participantRef = doc(db, "events", eventId, "participants", participantKey);
         const participantSnap = await getDoc(participantRef);
@@ -625,69 +632,6 @@ export function EventMissions({ eventId }: Props) {
           </>
         )}
 
-        {participantTab === "features" && (
-          <section className="space-y-3">
-            <div className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
-              <h2 className="text-lg font-bold text-zinc-900">イベント機能</h2>
-              <p className="mt-1 text-xs leading-relaxed text-zinc-600">
-                各機能の画面へ進みます。ミッション本体はホームでも開けます。
-              </p>
-            </div>
-            {canUseMissions ? (
-              <>
-                <article className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
-                  <h3 className="text-base font-bold text-zinc-900">ミッションカード</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                    ミッションを達成してポイントを集めよう。
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setParticipantTab("home")}
-                    className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl bg-[#7C3AED] py-3 text-sm font-bold text-white shadow-sm touch-manipulation"
-                  >
-                    ミッションカードを開く
-                    <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
-                  </button>
-                </article>
-
-                <article className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
-                  <h3 className="text-base font-bold text-zinc-900">クイズ</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-zinc-600">
-                    出題中のクイズに回答できます。
-                  </p>
-                  <Link
-                    href={`/events/${eventId}/quiz`}
-                    className={`mt-4 flex w-full items-center justify-center gap-1 rounded-xl py-3 text-sm font-bold shadow-sm touch-manipulation ${
-                      featureQuizEnabled
-                        ? "bg-violet-100 text-[#7C3AED] ring-1 ring-violet-200"
-                        : "cursor-pointer bg-zinc-100 text-zinc-500 ring-1 ring-zinc-200"
-                    }`}
-                  >
-                    クイズを開く
-                    <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
-                  </Link>
-                  {!featureQuizEnabled ? (
-                    <p className="mt-2 text-center text-[11px] text-zinc-500">現在は無効です（ページで案内されます）</p>
-                  ) : null}
-                </article>
-
-                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4">
-                  <p className="text-sm font-bold text-zinc-800">ビンゴ</p>
-                  <p className="mt-1 text-xs text-zinc-500">今後追加予定</p>
-                </article>
-                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4">
-                  <p className="text-sm font-bold text-zinc-800">ルーレット</p>
-                  <p className="mt-1 text-xs text-zinc-500">今後追加予定</p>
-                </article>
-              </>
-            ) : (
-              <p className="rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-600">
-                参加登録後に利用できます。
-              </p>
-            )}
-          </section>
-        )}
-
         {participantTab === "admin" && (
           <section
             className="rounded-2xl border-2 border-sky-200 bg-white p-4 shadow-sm"
@@ -738,63 +682,14 @@ export function EventMissions({ eventId }: Props) {
         )}
       </main>
 
-      <nav
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200 bg-white/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
-        aria-label="参加者メイン操作"
-      >
-        <div className="mx-auto grid h-14 max-w-md grid-cols-4">
-          <button
-            type="button"
-            onClick={() => setParticipantTab("home")}
-            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold touch-manipulation ${
-              participantTab === "home" ? "text-violet-700" : "text-zinc-500"
-            }`}
-          >
-            <Home className="h-5 w-5" strokeWidth={2} aria-hidden />
-            ホーム
-          </button>
-          <button
-            type="button"
-            onClick={() => setParticipantTab("features")}
-            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold touch-manipulation ${
-              participantTab === "features" ? "text-violet-700" : "text-zinc-500"
-            }`}
-          >
-            <LayoutGrid className="h-5 w-5" strokeWidth={2} aria-hidden />
-            機能
-          </button>
-          {showRankingLink ? (
-            <Link
-              href={`/events/${eventId}/ranking`}
-              className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-zinc-500 touch-manipulation"
-            >
-              <Trophy className="h-5 w-5" strokeWidth={2} aria-hidden />
-              ランキング
-            </Link>
-          ) : (
-            <div
-              className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-zinc-300"
-              title="ランキングは非公開です"
-            >
-              <Trophy className="h-5 w-5" strokeWidth={2} aria-hidden />
-              ランキング
-            </div>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              setParticipantTab("admin");
-              setAdminPinError("");
-            }}
-            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold touch-manipulation ${
-              participantTab === "admin" ? "text-violet-700" : "text-zinc-500"
-            }`}
-          >
-            <Shield className="h-5 w-5" strokeWidth={2} aria-hidden />
-            管理
-          </button>
-        </div>
-      </nav>
+      <ParticipantBottomNav
+        eventId={eventId}
+        showRankingLink={showRankingLink}
+        homeNavActive={participantTab === "home"}
+        featuresNavActive={false}
+        rankingNavActive={false}
+        adminNavActive={participantTab === "admin"}
+      />
     </div>
   );
 }
