@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { ChevronRight, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
@@ -21,7 +20,7 @@ import {
   type MissionFields,
   normalizeMissionFromFirestore,
 } from "../../lib/mission-schema";
-import { clearEventSession, getEventSession, setEventSession } from "../../lib/event-session";
+import { getEventSession, setEventSession } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../lib/participant-last-page";
@@ -68,7 +67,6 @@ type Props = {
 };
 
 export function EventMissions({ eventId }: Props) {
-  const router = useRouter();
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<MissionFields[]>(DEFAULT_MISSIONS_SEED);
   const [checkedMissionIds, setCheckedMissionIds] = useState<number[]>([]);
@@ -434,25 +432,9 @@ export function EventMissions({ eventId }: Props) {
     return `${count}/10`;
   };
 
-  const goToTop = () => {
-    clearEventSession();
-    router.push("/");
-  };
-
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => goToTop()}
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-zinc-200 bg-white text-sm font-bold text-[#111827] shadow-sm touch-manipulation"
-            aria-label="トップへ"
-          >
-            ←
-          </button>
-        </div>
-
         <header>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-bold text-[#111827]">{eventTitle || "イベント"}</h1>
