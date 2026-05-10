@@ -187,7 +187,13 @@ export function ParticipantBingoClient({ eventId }: Props) {
     if (!ready) return;
     const stateRef = doc(db, "events", eventId, "bingoState", "main");
     const unsub = onSnapshot(stateRef, (snap) => {
-      setState(normalizeBingoState(snap.exists() ? snap.data() : undefined));
+      const next = normalizeBingoState(snap.exists() ? snap.data() : undefined);
+      console.log("[bingo-participant] onSnapshot state", {
+        path: `events/${eventId}/bingoState/main`,
+        currentNumber: next.currentNumber,
+        drawnNumbers: next.drawnNumbers,
+      });
+      setState(next);
     });
     return () => unsub();
   }, [eventId, ready]);

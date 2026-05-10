@@ -6,10 +6,12 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   onSnapshot,
   serverTimestamp,
   setDoc,
+  runTransaction,
   writeBatch,
 } from "firebase/firestore";
 import { Dices } from "lucide-react";
@@ -48,6 +50,7 @@ export function AdminBingoClient({ eventId }: Props) {
   const [busy, setBusy] = useState(false);
   const [cards, setCards] = useState<BingoCardDoc[]>([]);
   const [participantCount, setParticipantCount] = useState(0);
+  const statePathLabel = `events/${eventId}/bingoState/main`;
 
   useEffect(() => {
     setAllowed(getAdminAccess(eventId));
@@ -58,36 +61,47 @@ export function AdminBingoClient({ eventId }: Props) {
   }, [allowed, eventId, router]);
 
   useEffect(() => {
-    const unsubEvent = onSnapshot(doc(db, "events", eventId), async (snap) => {
+    const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) return;
       const data = snap.data() as { title?: string; features?: unknown };
       setEventTitle(String(data.title ?? "イベント"));
-      const f = resolveEventFeatures(data.features);
-      await setDoc(
-        doc(db, "events", eventId),
-        {
-          features: {
-            mission: f.mission,
-            quiz: f.quiz,
-            bingo: true,
-            roulette: f.roulette,
-          },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      await setDoc(
-        doc(db, "events", eventId, "bingoSettings", "main"),
-        { ...DEFAULT_BINGO_SETTINGS, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
-      await setDoc(
-        doc(db, "events", eventId, "bingoState", "main"),
-        { ...DEFAULT_BINGO_STATE, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
     });
     return () => unsubEvent();
+  }, [eventId]);
+
+  useEffect(() => {
+    const initializeOnce = async () => {
+      const settingsRef = doc(db, "events", eventId, "bingoSettings", "main");
+      const stateRef = doc(db, "events", eventId, "bingoState", "main");
+      const evRef = doc(db, "events", eventId);
+      const evSnap = await getDoc(evRef);
+      if (evSnap.exists()) {
+        const data = evSnap.data() as { features?: unknown };
+        const f = resolveEventFeatures(data.features);
+        await setDoc(
+          evRef,
+          {
+            features: {
+              mission: f.mission,
+              quiz: f.quiz,
+              bingo: true,
+              roulette: f.roulette,
+            },
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+      const settingsSnap = await getDoc(settingsRef);
+      if (!settingsSnap.exists()) {
+        await setDoc(settingsRef, { ...DEFAULT_BINGO_SETTINGS, updatedAt: serverTimestamp() }, { merge: true });
+      }
+      const stateSnap = await getDoc(stateRef);
+      if (!stateSnap.exists()) {
+        await setDoc(stateRef, { ...DEFAULT_BINGO_STATE, updatedAt: serverTimestamp() }, { merge: true });
+      }
+    };
+    void initializeOnce();
   }, [eventId]);
 
   useEffect(() => {
@@ -99,10 +113,16 @@ export function AdminBingoClient({ eventId }: Props) {
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId, "bingoState", "main"), (snap) => {
-      setState(normalizeBingoState(snap.exists() ? snap.data() : undefined));
+      const next = normalizeBingoState(snap.exists() ? snap.data() : undefined);
+      console.log("[bingo-admin] onSnapshot state", {
+        path: statePathLabel,
+        currentNumber: next.currentNumber,
+        drawnNumbers: next.drawnNumbers,
+      });
+      setState(next);
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, statePathLabel]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "events", eventId, "bingoCards"), (snap) => {
@@ -138,16 +158,27 @@ export function AdminBingoClient({ eventId }: Props) {
   const bingoCount = useMemo(() => cards.filter((c) => c.bingoLines > 0).length, [cards]);
 
   const appendNumber = async (num: number, drawnBy: "admin" | "manual") => {
-    const unique = Array.from(new Set([...state.drawnNumbers, num]));
-    await setDoc(
-      doc(db, "events", eventId, "bingoState", "main"),
-      {
-        currentNumber: num,
-        drawnNumbers: unique,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+    const stateRef = doc(db, "events", eventId, "bingoState", "main");
+    const savedDrawnNumbers = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(stateRef);
+      const current = normalizeBingoState(snap.exists() ? snap.data() : undefined);
+      const unique = Array.from(new Set([...current.drawnNumbers, num]));
+      tx.set(
+        stateRef,
+        {
+          currentNumber: num,
+          drawnNumbers: unique,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      return unique;
+    });
+    console.log("[bingo-admin] draw saved", {
+      pickedNumber: num,
+      path: statePathLabel,
+      drawnNumbers: savedDrawnNumbers,
+    });
     await addDoc(collection(db, "events", eventId, "bingoDrawLogs"), {
       number: num,
       drawnAt: serverTimestamp(),
@@ -201,8 +232,9 @@ export function AdminBingoClient({ eventId }: Props) {
     if (!ok) return;
     setBusy(true);
     try {
+      const stateRef = doc(db, "events", eventId, "bingoState", "main");
       await setDoc(
-        doc(db, "events", eventId, "bingoState", "main"),
+        stateRef,
         { ...DEFAULT_BINGO_STATE, updatedAt: serverTimestamp() },
         { merge: true },
       );
@@ -221,14 +253,16 @@ export function AdminBingoClient({ eventId }: Props) {
     if (!proceed) return;
     setBusy(true);
     try {
+      const settingsRef = doc(db, "events", eventId, "bingoSettings", "main");
+      const stateRef = doc(db, "events", eventId, "bingoState", "main");
       await setDoc(
-        doc(db, "events", eventId, "bingoSettings", "main"),
+        settingsRef,
         { gridSize: nextSize, updatedAt: serverTimestamp() },
         { merge: true },
       );
       if (cards.length > 0) {
         await setDoc(
-          doc(db, "events", eventId, "bingoState", "main"),
+          stateRef,
           { ...DEFAULT_BINGO_STATE, updatedAt: serverTimestamp() },
           { merge: true },
         );
