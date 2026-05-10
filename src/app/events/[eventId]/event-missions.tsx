@@ -29,8 +29,7 @@ import {
   setEventSession,
 } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
-import { EventQuiz } from "./features/event-quiz";
-import { Home, LayoutGrid, Shield, Trophy } from "lucide-react";
+import { Home, ChevronRight, LayoutGrid, Shield, Trophy } from "lucide-react";
 
 type ParticipantTab = "home" | "features" | "admin";
 
@@ -630,27 +629,56 @@ export function EventMissions({ eventId }: Props) {
           <section className="space-y-3">
             <div className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
               <h2 className="text-lg font-bold text-zinc-900">イベント機能</h2>
-              <p className="mt-1 text-xs text-zinc-600">有効なものだけ表示しています。ミッションは「ホーム」で確認できます。</p>
+              <p className="mt-1 text-xs leading-relaxed text-zinc-600">
+                各機能の画面へ進みます。ミッション本体はホームでも開けます。
+              </p>
             </div>
             {canUseMissions ? (
               <>
-                {featureQuizEnabled ? (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold text-violet-700">クイズ</p>
-                    <EventQuiz eventId={eventId} />
-                  </div>
-                ) : null}
-                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4 text-center">
+                <article className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+                  <h3 className="text-base font-bold text-zinc-900">ミッションカード</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+                    ミッションを達成してポイントを集めよう。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setParticipantTab("home")}
+                    className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl bg-[#7C3AED] py-3 text-sm font-bold text-white shadow-sm touch-manipulation"
+                  >
+                    ミッションカードを開く
+                    <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                  </button>
+                </article>
+
+                <article className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
+                  <h3 className="text-base font-bold text-zinc-900">クイズ</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-zinc-600">
+                    出題中のクイズに回答できます。
+                  </p>
+                  <Link
+                    href={`/events/${eventId}/quiz`}
+                    className={`mt-4 flex w-full items-center justify-center gap-1 rounded-xl py-3 text-sm font-bold shadow-sm touch-manipulation ${
+                      featureQuizEnabled
+                        ? "bg-violet-100 text-[#7C3AED] ring-1 ring-violet-200"
+                        : "cursor-pointer bg-zinc-100 text-zinc-500 ring-1 ring-zinc-200"
+                    }`}
+                  >
+                    クイズを開く
+                    <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                  </Link>
+                  {!featureQuizEnabled ? (
+                    <p className="mt-2 text-center text-[11px] text-zinc-500">現在は無効です（ページで案内されます）</p>
+                  ) : null}
+                </article>
+
+                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4">
                   <p className="text-sm font-bold text-zinc-800">ビンゴ</p>
                   <p className="mt-1 text-xs text-zinc-500">今後追加予定</p>
                 </article>
-                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4 text-center">
+                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4">
                   <p className="text-sm font-bold text-zinc-800">ルーレット</p>
                   <p className="mt-1 text-xs text-zinc-500">今後追加予定</p>
                 </article>
-                {!featureQuizEnabled ? (
-                  <p className="text-center text-xs text-zinc-500">有効なオプション機能はまだありません。</p>
-                ) : null}
               </>
             ) : (
               <p className="rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-600">
