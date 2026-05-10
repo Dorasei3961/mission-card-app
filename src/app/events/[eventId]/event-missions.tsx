@@ -30,6 +30,9 @@ import {
 } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
 import { EventQuiz } from "./features/event-quiz";
+import { Home, LayoutGrid, Shield, Trophy } from "lucide-react";
+
+type ParticipantTab = "home" | "features" | "admin";
 
 function parseCheckedMissionIdsFromFirestore(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -83,7 +86,7 @@ export function EventMissions({ eventId }: Props) {
   const [canUseMissions, setCanUseMissions] = useState(false);
   const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
-  const [adminPinModalOpen, setAdminPinModalOpen] = useState(false);
+  const [participantTab, setParticipantTab] = useState<ParticipantTab>("home");
   const [adminPinInput, setAdminPinInput] = useState("");
   const [adminPinError, setAdminPinError] = useState("");
   const [adminPinBusy, setAdminPinBusy] = useState(false);
@@ -310,12 +313,6 @@ export function EventMissions({ eventId }: Props) {
     });
   }, [visibleMissions]);
 
-  const openAdminFlow = () => {
-    setAdminPinInput("");
-    setAdminPinError("");
-    setAdminPinModalOpen(true);
-  };
-
   const verifyAdminPin = async () => {
     const entered = filterAdminPinInput(adminPinInput);
     if (!isValidFourDigitAdminPin(entered)) {
@@ -341,7 +338,6 @@ export function EventMissions({ eventId }: Props) {
         return;
       }
       setAdminAccess(eventId, true);
-      setAdminPinModalOpen(false);
       router.push(`/admin/${eventId}`);
     } catch (e) {
       console.error(e);
@@ -484,97 +480,44 @@ export function EventMissions({ eventId }: Props) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-yellow-100 via-orange-100 to-red-100 p-4">
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4">
+    <div className="min-h-screen bg-gradient-to-b from-yellow-100 via-orange-100 to-red-100 pb-24">
+      <main className="mx-auto flex w-full max-w-md flex-col gap-4 p-4">
         <nav
-          className="flex items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white/95 px-2.5 py-2 shadow-sm"
+          className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white/95 px-2.5 py-2 shadow-sm"
           aria-label="イベント内ナビゲーション"
         >
           <button
             type="button"
             onClick={() => goToTop()}
-            className="inline-flex h-11 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-zinc-800 hover:bg-zinc-50"
+            className="inline-flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-zinc-800 hover:bg-zinc-50 touch-manipulation"
           >
             <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-sm">
               ←
             </span>
             <span className="truncate text-sm font-bold">{eventTitle || "イベント"}</span>
           </button>
-
-          <div className="flex shrink-0 items-center gap-1.5">
-            {showRankingLink ? (
-              <Link
-                href={`/events/${eventId}/ranking`}
-                className="inline-flex h-11 w-14 flex-col items-center justify-center rounded-lg border border-zinc-200 bg-white text-[10px] font-semibold text-zinc-700 shadow-sm"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
-                  <path
-                    d="M8 4h8v2a4 4 0 0 0 4 4v1a5 5 0 0 1-5 5h-1v2h3v2H7v-2h3v-2H9a5 5 0 0 1-5-5V10a4 4 0 0 0 4-4V4Z"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                <span className="mt-0.5 leading-none">ランキング</span>
-              </Link>
-            ) : null}
-            {canUseMissions && (featureMissionEnabled || featureQuizEnabled) ? (
-              <Link
-                href={`/events/${eventId}/features?from=participant`}
-                className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-fuchsia-200 bg-fuchsia-50 text-[10px] font-semibold text-fuchsia-700 shadow-sm"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
-                  <rect x="4" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
-                  <rect x="14" y="4" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
-                  <rect x="4" y="14" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
-                  <rect x="14" y="14" width="6" height="6" rx="1" fill="none" stroke="currentColor" strokeWidth="1.7" />
-                </svg>
-                <span className="mt-0.5 leading-none">機能</span>
-              </Link>
-            ) : null}
-            {canUseMissions ? (
-              <button
-                type="button"
-                onClick={() => void openAdminFlow()}
-                className="inline-flex h-11 w-12 flex-col items-center justify-center rounded-lg border border-sky-200 bg-sky-50 text-[10px] font-semibold text-sky-700 shadow-sm"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4">
-                  <path
-                    d="m12 3 1.4 1.8 2.2.4.9 2 2 1-.4 2.2 1.8 1.6-1.8 1.6.4 2.2-2 1-.9 2-2.2.4L12 21l-1.4-1.8-2.2-.4-.9-2-2-1 .4-2.2L4.1 12l1.8-1.6-.4-2.2 2-1 .9-2 2.2-.4L12 3Z"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                  <circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" strokeWidth="1.6" />
-                </svg>
-                <span className="mt-0.5 leading-none">管理</span>
-              </button>
-            ) : null}
-          </div>
         </nav>
 
-        <header className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
-          <p className="text-sm font-semibold text-amber-700">{eventTitle || "イベント"}</p>
-          <h1 className="text-2xl font-black tracking-wide text-zinc-900">
-            {participantName || "参加者"}さんの合計ポイント:{" "}
-            {(liveParticipantTotalPts ?? totalPoints).toLocaleString("ja-JP")} pt
-          </h1>
-          <p className="mt-1 text-xs text-zinc-600">記録した内容から自動計算された合計です。</p>
-          {isClosed ? (
-            <p className="mt-2 text-xs font-bold text-red-600">このイベントは終了しました（閲覧のみ）</p>
-          ) : null}
-          {errorMessage ? (
-            <p className="mt-2 text-xs font-semibold text-red-600">{errorMessage}</p>
-          ) : null}
-        </header>
+        {participantTab === "home" && (
+          <>
+            <header className="rounded-2xl border-4 border-amber-300 bg-white p-4 shadow-[0_8px_0_#f59e0b]">
+              <p className="text-sm font-semibold text-amber-700">{eventTitle || "イベント"}</p>
+              <h1 className="text-2xl font-black tracking-wide text-zinc-900">
+                {participantName || "参加者"}さんの合計ポイント:{" "}
+                {(liveParticipantTotalPts ?? totalPoints).toLocaleString("ja-JP")} pt
+              </h1>
+              <p className="mt-1 text-xs text-zinc-600">記録した内容から自動計算された合計です。</p>
+              {isClosed ? (
+                <p className="mt-2 text-xs font-bold text-red-600">このイベントは終了しました（閲覧のみ）</p>
+              ) : null}
+              {errorMessage ? (
+                <p className="mt-2 text-xs font-semibold text-red-600">{errorMessage}</p>
+              ) : null}
+            </header>
 
-        {canUseMissions ? (
-          <section className="space-y-3">
-            {featureMissionEnabled ? visibleMissions.map((mission) => {
+            {canUseMissions ? (
+              <section className="space-y-3">
+                {featureMissionEnabled ? visibleMissions.map((mission) => {
               if (mission.type === "checkbox") {
                 const isChecked = checkedMissionIds.includes(mission.id);
                 return (
@@ -665,7 +608,8 @@ export function EventMissions({ eventId }: Props) {
                   <p className="text-center text-lg font-black text-emerald-600">+{linePoints} pt</p>
                 </div>
               );
-            }            ) : (
+            })
+                : (
               <article className="rounded-2xl border-4 border-zinc-300 bg-white p-4 shadow-[0_8px_0_#a1a1aa]">
                 <h2 className="text-lg font-black text-zinc-900">ミッション機能は無効です</h2>
                 <p className="mt-2 text-sm text-zinc-600">
@@ -673,69 +617,156 @@ export function EventMissions({ eventId }: Props) {
                 </p>
               </article>
             )}
-            {featureQuizEnabled ? (
-              <div className="mt-2">
-                <EventQuiz eventId={eventId} />
-              </div>
-            ) : null}
           </section>
-        ) : null}
+        ) : (
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            参加登録が必要です。参加画面から入り直してください。
+          </p>
+        )}
+          </>
+        )}
+
+        {participantTab === "features" && (
+          <section className="space-y-3">
+            <div className="rounded-2xl border border-violet-200 bg-white p-4 shadow-sm">
+              <h2 className="text-lg font-bold text-zinc-900">イベント機能</h2>
+              <p className="mt-1 text-xs text-zinc-600">有効なものだけ表示しています。ミッションは「ホーム」で確認できます。</p>
+            </div>
+            {canUseMissions ? (
+              <>
+                {featureQuizEnabled ? (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold text-violet-700">クイズ</p>
+                    <EventQuiz eventId={eventId} />
+                  </div>
+                ) : null}
+                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4 text-center">
+                  <p className="text-sm font-bold text-zinc-800">ビンゴ</p>
+                  <p className="mt-1 text-xs text-zinc-500">今後追加予定</p>
+                </article>
+                <article className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-4 text-center">
+                  <p className="text-sm font-bold text-zinc-800">ルーレット</p>
+                  <p className="mt-1 text-xs text-zinc-500">今後追加予定</p>
+                </article>
+                {!featureQuizEnabled ? (
+                  <p className="text-center text-xs text-zinc-500">有効なオプション機能はまだありません。</p>
+                ) : null}
+              </>
+            ) : (
+              <p className="rounded-xl border border-zinc-200 bg-white px-3 py-3 text-sm text-zinc-600">
+                参加登録後に利用できます。
+              </p>
+            )}
+          </section>
+        )}
+
+        {participantTab === "admin" && (
+          <section
+            className="rounded-2xl border-2 border-sky-200 bg-white p-4 shadow-sm"
+            aria-labelledby="participant-admin-title"
+          >
+            <h2 id="participant-admin-title" className="text-lg font-black text-zinc-900">
+              運営管理PIN
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              4桁の管理用PINを入力し、認証に成功した場合のみ運営画面へ進めます。
+            </p>
+            {!canUseMissions ? (
+              <p className="mt-3 text-sm font-semibold text-amber-800">このイベントに参加していないため、管理に入れません。</p>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{4}"
+                  maxLength={4}
+                  autoComplete="off"
+                  value={adminPinInput}
+                  onChange={(e) => {
+                    setAdminPinInput(filterAdminPinInput(e.target.value));
+                    if (adminPinError) setAdminPinError("");
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void verifyAdminPin();
+                  }}
+                  className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
+                  placeholder="例：1234"
+                  disabled={adminPinBusy}
+                />
+                {adminPinError ? (
+                  <p className="mt-2 text-sm font-semibold text-red-600">{adminPinError}</p>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={adminPinBusy}
+                  onClick={() => void verifyAdminPin()}
+                  className="mt-4 w-full rounded-xl bg-sky-600 py-3 text-base font-bold text-white disabled:opacity-50 touch-manipulation"
+                >
+                  {adminPinBusy ? "確認中…" : "認証して運営画面へ"}
+                </button>
+              </>
+            )}
+          </section>
+        )}
       </main>
 
-      {adminPinModalOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="admin-pin-title"
-        >
-          <div className="w-full max-w-md rounded-2xl border-4 border-blue-200 bg-white p-5 shadow-xl">
-            <h2 id="admin-pin-title" className="text-lg font-black text-zinc-900">
-              運営PINを入力
-            </h2>
-            <p className="mt-1 text-sm text-zinc-600">4桁の管理用PINを入力してください。</p>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="\d{4}"
-              maxLength={4}
-              autoComplete="off"
-              value={adminPinInput}
-              onChange={(e) => {
-                setAdminPinInput(filterAdminPinInput(e.target.value));
-                if (adminPinError) setAdminPinError("");
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void verifyAdminPin();
-              }}
-              className="mt-4 w-full rounded-xl border-2 border-zinc-200 px-4 py-4 text-xl font-bold tracking-widest"
-              placeholder="例：1234"
-              disabled={adminPinBusy}
-            />
-            {adminPinError ? (
-              <p className="mt-2 text-sm font-semibold text-red-600">{adminPinError}</p>
-            ) : null}
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row-reverse sm:justify-end">
-              <button
-                type="button"
-                disabled={adminPinBusy}
-                onClick={() => void verifyAdminPin()}
-                className="rounded-xl bg-blue-600 py-3 text-base font-bold text-white disabled:opacity-50 touch-manipulation"
-              >
-                {adminPinBusy ? "確認中…" : "運営画面へ"}
-              </button>
-              <button
-                type="button"
-                disabled={adminPinBusy}
-                onClick={() => setAdminPinModalOpen(false)}
-                className="rounded-xl bg-zinc-200 py-3 text-base font-bold text-zinc-800 disabled:opacity-50 touch-manipulation"
-              >
-                キャンセル
-              </button>
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200 bg-white/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(0,0,0,0.06)]"
+        aria-label="参加者メイン操作"
+      >
+        <div className="mx-auto grid h-14 max-w-md grid-cols-4">
+          <button
+            type="button"
+            onClick={() => setParticipantTab("home")}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold touch-manipulation ${
+              participantTab === "home" ? "text-violet-700" : "text-zinc-500"
+            }`}
+          >
+            <Home className="h-5 w-5" strokeWidth={2} aria-hidden />
+            ホーム
+          </button>
+          <button
+            type="button"
+            onClick={() => setParticipantTab("features")}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold touch-manipulation ${
+              participantTab === "features" ? "text-violet-700" : "text-zinc-500"
+            }`}
+          >
+            <LayoutGrid className="h-5 w-5" strokeWidth={2} aria-hidden />
+            機能
+          </button>
+          {showRankingLink ? (
+            <Link
+              href={`/events/${eventId}/ranking`}
+              className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-zinc-500 touch-manipulation"
+            >
+              <Trophy className="h-5 w-5" strokeWidth={2} aria-hidden />
+              ランキング
+            </Link>
+          ) : (
+            <div
+              className="flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold text-zinc-300"
+              title="ランキングは非公開です"
+            >
+              <Trophy className="h-5 w-5" strokeWidth={2} aria-hidden />
+              ランキング
             </div>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setParticipantTab("admin");
+              setAdminPinError("");
+            }}
+            className={`flex flex-col items-center justify-center gap-0.5 text-[10px] font-bold touch-manipulation ${
+              participantTab === "admin" ? "text-violet-700" : "text-zinc-500"
+            }`}
+          >
+            <Shield className="h-5 w-5" strokeWidth={2} aria-hidden />
+            管理
+          </button>
         </div>
-      ) : null}
+      </nav>
     </div>
   );
 }
