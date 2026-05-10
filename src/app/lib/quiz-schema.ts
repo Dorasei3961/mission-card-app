@@ -1,3 +1,4 @@
+/** Firestore: `events/{eventId}/quizzes/{quizId}` とアプリ側の正規化を共有する */
 import type { Timestamp } from "firebase/firestore";
 
 export type QuizStatus = "draft" | "active" | "closed";

@@ -83,11 +83,18 @@ export function EventFeaturesClient({ eventId }: Props) {
           </div>
         </header>
 
-        <div className="flex gap-1 overflow-x-auto rounded-2xl border border-violet-100 bg-white p-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          role="tablist"
+          aria-label="イベント機能のタブ"
+          className="flex gap-1 overflow-x-auto rounded-2xl border border-violet-100 bg-white p-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {tabs.map((t) => (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              id={`feature-tab-${t.id}`}
               onClick={() => setTab(t.id)}
               className={`shrink-0 rounded-xl px-3 py-2 text-xs font-bold transition touch-manipulation ${
                 tab === t.id ? "bg-[#7C3AED] text-white shadow-sm" : "text-zinc-600 hover:bg-violet-50"
