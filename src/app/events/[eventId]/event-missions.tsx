@@ -383,7 +383,9 @@ export function EventMissions({ eventId }: Props) {
         const participantSnapForPts = await getDoc(participantRefForPts);
         const quizPtsRaw = participantSnapForPts.data()?.quizPoints;
         const quizPts = typeof quizPtsRaw === "number" && Number.isFinite(quizPtsRaw) ? quizPtsRaw : 0;
-        const grandTotal = computedTotal + quizPts;
+        const bingoPtsRaw = participantSnapForPts.data()?.bingoPoints;
+        const bingoPts = typeof bingoPtsRaw === "number" && Number.isFinite(bingoPtsRaw) ? bingoPtsRaw : 0;
+        const grandTotal = computedTotal + quizPts + bingoPts;
 
         await setDoc(
           participantRefForPts,

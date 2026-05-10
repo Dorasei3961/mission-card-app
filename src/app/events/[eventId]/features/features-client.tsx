@@ -245,8 +245,16 @@ export function EventFeaturesClient({ eventId }: Props) {
             <li>
               <button
                 type="button"
-                onClick={soon}
-                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] touch-manipulation"
+                disabled={!features.bingo && !fromAdmin}
+                onClick={() => {
+                  if (!features.bingo && !fromAdmin) {
+                    soon();
+                    return;
+                  }
+                  if (fromAdmin) router.push(`/admin/${eventId}/bingo`);
+                  else router.push(`/events/${eventId}/bingo`);
+                }}
+                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60 touch-manipulation"
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-50 text-zinc-500">
                   <LayoutGrid className="h-6 w-6" strokeWidth={2} aria-hidden />
@@ -254,12 +262,16 @@ export function EventFeaturesClient({ eventId }: Props) {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ビンゴ</span>
-                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-bold text-[#6B7280] ring-1 ring-zinc-200">
-                      未利用
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                      features.bingo
+                        ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                        : "bg-zinc-100 text-[#6B7280] ring-zinc-200"
+                    }`}>
+                      {features.bingo ? "利用中" : "未利用"}
                     </span>
                   </span>
                   <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
-                    ビンゴで景品をゲットしよう！
+                    数字をそろえてビンゴを目指そう！
                   </p>
                 </span>
                 <span className="shrink-0 text-[#6B7280]">›</span>

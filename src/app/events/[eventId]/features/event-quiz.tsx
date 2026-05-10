@@ -210,17 +210,18 @@ export function EventQuiz({ eventId }: Props) {
         });
         const partSnap = await getDoc(partRef);
         const qp = Number(partSnap.data()?.quizPoints ?? 0);
+        const bp = Number(partSnap.data()?.bingoPoints ?? 0);
         const progSnap = await getDoc(doc(db, "events", eventId, "missionProgress", participantDocId));
         let missionTotal = 0;
         if (progSnap.exists()) {
           const pv = progSnap.data() as { totalPoints?: number };
           if (typeof pv.totalPoints === "number") missionTotal = pv.totalPoints;
         }
-        await setDoc(partRef, { totalPoints: missionTotal + qp }, { merge: true });
+        await setDoc(partRef, { totalPoints: missionTotal + qp + bp }, { merge: true });
         await setDoc(
           doc(db, "users", authUid),
           {
-            totalPoints: missionTotal + qp,
+            totalPoints: missionTotal + qp + bp,
             updatedAt: serverTimestamp(),
           },
           { merge: true },

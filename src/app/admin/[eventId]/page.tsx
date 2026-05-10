@@ -668,14 +668,13 @@ export default function EventAdminPage({ params }: Props) {
               </Link>
             </li>
             <li>
-              <button
-                type="button"
-                onClick={() => window.alert("今後追加予定です")}
-                className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-left text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
+              <Link
+                href={`/admin/${eventId}/bingo`}
+                className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
               >
                 <span>ビンゴ</span>
                 <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
-              </button>
+              </Link>
             </li>
             <li>
               <button
