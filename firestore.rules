@@ -151,6 +151,40 @@ service cloud.firestore {
           && request.resource.data.selectedIndex is int;
         allow update, delete: if false;
       }
+
+      // ルーレット設定（運営=owner のみ編集、全員閲覧可）
+      match /rouletteSettings/{docId} {
+        allow read: if true;
+        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+      }
+
+      // ルーレット状態（参加者も spinning / finished へ更新するためサインイン参加者に許可）
+      match /rouletteState/{docId} {
+        allow read: if true;
+        allow create, update: if isSignedIn() && isEventActive(eventId);
+      }
+
+      // ルーレット候補（運営が編集。当選除外は active のみ変更）
+      match /rouletteItems/{itemId} {
+        allow read: if true;
+        allow create, delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow update: if isEventOwner(eventId) && isEventActive(eventId)
+          || (
+            isSignedIn()
+            && isEventActive(eventId)
+            && resource.data.active == true
+            && request.resource.data.active == false
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt'])
+          );
+      }
+
+      // ルーレット履歴
+      match /rouletteHistory/{historyId} {
+        allow read: if true;
+        allow create: if isSignedIn() && isEventActive(eventId);
+        allow delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow update: if false;
+      }
     }
 
     // users は本人のみ

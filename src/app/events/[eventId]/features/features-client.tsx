@@ -282,22 +282,39 @@ export function EventFeaturesClient({ eventId }: Props) {
             <li>
               <button
                 type="button"
-                onClick={soon}
-                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] touch-manipulation"
+                disabled={!features.roulette && !fromAdmin}
+                onClick={() => {
+                  if (!features.roulette && !fromAdmin) {
+                    soon();
+                    return;
+                  }
+                  if (fromAdmin) router.push(`/admin/${eventId}/roulette`);
+                  else router.push(`/events/${eventId}/roulette`);
+                }}
+                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60 touch-manipulation"
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-50 text-zinc-500">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-50 text-fuchsia-600">
                   <Sparkles className="h-6 w-6" strokeWidth={2} aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ルーレット</span>
-                    <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-bold text-[#6B7280] ring-1 ring-zinc-200">
-                      未利用
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                        features.roulette
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                          : "bg-zinc-100 text-[#6B7280] ring-zinc-200"
+                      }`}
+                    >
+                      {features.roulette ? "利用中" : "未利用"}
                     </span>
                   </span>
                   <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
-                    ルーレットで運試し！
+                    景品抽選・チーム分け・参加者抽選に使えます。
                   </p>
+                  {!features.roulette ? (
+                    <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">今後追加予定</p>
+                  ) : null}
                 </span>
                 <span className="shrink-0 text-[#6B7280]">›</span>
               </button>
