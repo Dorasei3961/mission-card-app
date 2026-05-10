@@ -195,14 +195,7 @@ export function RankingClient({ eventId }: Props) {
           </>
         )}
       </main>
-      <ParticipantBottomNav
-        eventId={eventId}
-        showRankingLink={showRankingNav}
-        homeNavActive={false}
-        featuresNavActive={false}
-        rankingNavActive
-        adminNavActive={false}
-      />
+      <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingNav} />
     </div>
   );
 }

@@ -600,14 +600,7 @@ export function EventMissions({ eventId }: Props) {
         </section>
       </main>
 
-      <ParticipantBottomNav
-        eventId={eventId}
-        showRankingLink={showRankingLink}
-        homeNavActive
-        featuresNavActive={false}
-        rankingNavActive={false}
-        adminNavActive={false}
-      />
+      <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingLink} />
     </div>
   );
 }

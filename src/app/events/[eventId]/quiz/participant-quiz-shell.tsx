@@ -25,14 +25,7 @@ export function ParticipantQuizShell({ eventId }: Props) {
       <main className="mx-auto max-w-md">
         <EventQuiz eventId={eventId} />
       </main>
-      <ParticipantBottomNav
-        eventId={eventId}
-        showRankingLink={showRankingLink}
-        homeNavActive={false}
-        featuresNavActive
-        rankingNavActive={false}
-        adminNavActive={false}
-      />
+      <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingLink} />
     </div>
   );
 }

@@ -132,14 +132,7 @@ export function ParticipantManageClient({ eventId }: Props) {
         </div>
       </main>
 
-      <ParticipantBottomNav
-        eventId={eventId}
-        showRankingLink={showRankingLink}
-        homeNavActive={false}
-        featuresNavActive={false}
-        rankingNavActive={false}
-        adminNavActive
-      />
+      <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingLink} />
     </div>
   );
 }

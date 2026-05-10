@@ -295,14 +295,7 @@ export function EventFeaturesClient({ eventId }: Props) {
       </main>
 
       {!fromAdmin ? (
-        <ParticipantBottomNav
-          eventId={eventId}
-          showRankingLink={showRankingLink}
-          homeNavActive={false}
-          featuresNavActive
-          rankingNavActive={false}
-          adminNavActive={false}
-        />
+        <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingLink} />
       ) : null}
     </div>
   );

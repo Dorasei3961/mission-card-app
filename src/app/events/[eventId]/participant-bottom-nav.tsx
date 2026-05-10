@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Home, LayoutGrid, Shield, Trophy } from "lucide-react";
 import {
   getLastEventPage,
@@ -11,21 +11,33 @@ import {
 export type ParticipantBottomNavProps = {
   eventId: string;
   showRankingLink: boolean;
-  homeNavActive: boolean;
-  featuresNavActive: boolean;
-  rankingNavActive: boolean;
-  adminNavActive: boolean;
 };
 
-export function ParticipantBottomNav({
-  eventId,
-  showRankingLink,
-  homeNavActive,
-  featuresNavActive,
-  rankingNavActive,
-  adminNavActive,
-}: ParticipantBottomNavProps) {
+/** `/events/{id}/{segment}` またはその配下のみマッチ（`/quizz` などを除外） */
+function matchesSubpath(base: string, pathname: string, segment: string): boolean {
+  const prefix = `${base}/${segment}`;
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBottomNavProps) {
   const router = useRouter();
+  const pathname = usePathname() ?? "";
+
+  const base = `/events/${eventId}`;
+
+  const isHomeSection =
+    pathname === base ||
+    pathname === `${base}/` ||
+    matchesSubpath(base, pathname, "quiz") ||
+    matchesSubpath(base, pathname, "mission") ||
+    matchesSubpath(base, pathname, "bingo") ||
+    matchesSubpath(base, pathname, "roulette");
+
+  const featuresNavActive = matchesSubpath(base, pathname, "features");
+  const rankingNavActive = matchesSubpath(base, pathname, "ranking");
+  const adminNavActive = matchesSubpath(base, pathname, "manage");
+
+  const homeNavActive = isHomeSection && !featuresNavActive && !rankingNavActive && !adminNavActive;
 
   const goHomeTarget = () => {
     router.push(getLastEventPage(eventId));
