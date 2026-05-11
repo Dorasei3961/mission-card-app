@@ -197,10 +197,10 @@ export default function EventCreatePage() {
               トップへ
             </button>
             <Link
-              href={`/events/${created.eventId}`}
+              href={`/admin/${created.eventId}`}
               className="block rounded-xl bg-sky-600 py-3 text-center text-base font-bold text-white"
             >
-              参加者画面へ
+              運営画面へ
             </Link>
           </div>
         </main>

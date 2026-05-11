@@ -11,6 +11,7 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
@@ -43,6 +44,7 @@ import {
 type AdminMission = MissionFields & { docId: string };
 type ParticipantSummary = { uid: string; name: string; totalPoints: number; completedCount: number };
 type Props = { params: Promise<{ eventId: string }> };
+type AdminFeatureKey = "mission" | "quiz" | "bingo" | "roulette";
 
 const DEFAULT_CATEGORY_COLOR = "custom";
 
@@ -79,6 +81,14 @@ export default function EventAdminPage({ params }: Props) {
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [missionEditorOpen, setMissionEditorOpen] = useState(false);
+  const [selectedFeature, setSelectedFeature] = useState<AdminFeatureKey>("mission");
+  const [quizStats, setQuizStats] = useState({ questionCount: 0, answerCount: 0, correctCount: 0 });
+  const [bingoStats, setBingoStats] = useState({ participantCount: 0, reachCount: 0, bingoCount: 0 });
+  const [rouletteStats, setRouletteStats] = useState({
+    candidateCount: 0,
+    executionCount: 0,
+    latestResult: "未実行",
+  });
 
   const missionHubRef = useRef<HTMLDivElement>(null);
   const detailSettingsRef = useRef<HTMLDivElement>(null);
@@ -243,6 +253,68 @@ export default function EventAdminPage({ params }: Props) {
     void loadMissions();
     void loadParticipants();
   }, [eventId, authReady, eventResolved, eventMissing, canManage]);
+
+  useEffect(() => {
+    if (!eventId || !canManage) return;
+    const unsubQuizzes = onSnapshot(collection(db, "events", eventId, "quizzes"), (snap) => {
+      setQuizStats((prev) => ({ ...prev, questionCount: snap.size }));
+    });
+    const unsubQuizAnswers = onSnapshot(collection(db, "events", eventId, "quizAnswers"), (snap) => {
+      let correctCount = 0;
+      snap.docs.forEach((answerDoc) => {
+        const data = answerDoc.data() as { isCorrect?: unknown };
+        if (data.isCorrect === true) correctCount += 1;
+      });
+      setQuizStats((prev) => ({ ...prev, answerCount: snap.size, correctCount }));
+    });
+    const unsubBingoCards = onSnapshot(collection(db, "events", eventId, "bingoCards"), (snap) => {
+      let reachCount = 0;
+      let bingoCount = 0;
+      snap.docs.forEach((cardDoc) => {
+        const data = cardDoc.data() as { reachLines?: unknown; bingoLines?: unknown };
+        const reachLines = typeof data.reachLines === "number" ? data.reachLines : 0;
+        const bingoLines = typeof data.bingoLines === "number" ? data.bingoLines : 0;
+        if (reachLines > 0 && bingoLines === 0) reachCount += 1;
+        if (bingoLines > 0) bingoCount += 1;
+      });
+      setBingoStats({ participantCount: snap.size, reachCount, bingoCount });
+    });
+    const unsubRouletteItems = onSnapshot(collection(db, "events", eventId, "rouletteItems"), (snap) => {
+      setRouletteStats((prev) => ({ ...prev, candidateCount: snap.size }));
+    });
+    const unsubRouletteHistory = onSnapshot(
+      query(collection(db, "events", eventId, "rouletteHistory")),
+      (snap) => {
+        let latestCreatedAt = 0;
+        let latestResult = "未実行";
+        snap.docs.forEach((historyDoc) => {
+          const data = historyDoc.data() as { winnerLabel?: unknown; label?: unknown; createdAt?: unknown };
+          const createdAt =
+            data.createdAt instanceof Timestamp
+              ? data.createdAt.toMillis()
+              : data.createdAt && typeof (data.createdAt as { toMillis?: unknown }).toMillis === "function"
+                ? ((data.createdAt as { toMillis: () => number }).toMillis?.() ?? 0)
+                : 0;
+          if (createdAt >= latestCreatedAt) {
+            latestCreatedAt = createdAt;
+            if (typeof data.winnerLabel === "string" && data.winnerLabel.trim()) {
+              latestResult = data.winnerLabel.trim();
+            } else if (typeof data.label === "string" && data.label.trim()) {
+              latestResult = data.label.trim();
+            }
+          }
+        });
+        setRouletteStats((prev) => ({ ...prev, executionCount: snap.size, latestResult }));
+      },
+    );
+    return () => {
+      unsubQuizzes();
+      unsubQuizAnswers();
+      unsubBingoCards();
+      unsubRouletteItems();
+      unsubRouletteHistory();
+    };
+  }, [eventId, canManage]);
 
   const toggleRankingVisible = async () => {
     if (!canEdit) return;
@@ -454,6 +526,10 @@ export default function EventAdminPage({ params }: Props) {
     () => participants.reduce((s, p) => s + p.totalPoints, 0),
     [participants],
   );
+  const quizCorrectRate = useMemo(() => {
+    if (quizStats.answerCount <= 0) return 0;
+    return Math.round((quizStats.correctCount / quizStats.answerCount) * 100);
+  }, [quizStats.answerCount, quizStats.correctCount]);
 
   const qrImageSrc =
     joinUrl.length > 0
@@ -647,7 +723,7 @@ export default function EventAdminPage({ params }: Props) {
               <button
                 type="button"
                 onClick={() => {
-                  setMissionEditorOpen(true);
+                  setSelectedFeature("mission");
                   requestAnimationFrame(() =>
                     missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
                   );
@@ -659,35 +735,57 @@ export default function EventAdminPage({ params }: Props) {
               </button>
             </li>
             <li>
-              <Link
-                href={`/admin/${eventId}/quiz`}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFeature("quiz");
+                  setMissionEditorOpen(false);
+                  requestAnimationFrame(() =>
+                    missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  );
+                }}
                 className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
               >
                 <span>クイズ</span>
                 <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
-              </Link>
+              </button>
             </li>
             <li>
-              <Link
-                href={`/admin/${eventId}/bingo`}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFeature("bingo");
+                  setMissionEditorOpen(false);
+                  requestAnimationFrame(() =>
+                    missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  );
+                }}
                 className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
               >
                 <span>ビンゴ</span>
                 <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
-              </Link>
+              </button>
             </li>
             <li>
-              <Link
-                href={`/admin/${eventId}/roulette`}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFeature("roulette");
+                  setMissionEditorOpen(false);
+                  requestAnimationFrame(() =>
+                    missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  );
+                }}
                 className="flex w-full items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-900 hover:bg-zinc-100 touch-manipulation"
               >
                 <span>ルーレット</span>
                 <ChevronRight className="h-4 w-4 text-zinc-400" strokeWidth={2} aria-hidden />
-              </Link>
+              </button>
             </li>
           </ul>
 
           <div className="mt-6 space-y-3">
+                {selectedFeature === "mission" ? (
                 <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <h2 className="text-base font-bold text-zinc-900">ミッション管理</h2>
@@ -733,8 +831,114 @@ export default function EventAdminPage({ params }: Props) {
                     </p>
                   ) : null}
                 </div>
+                ) : null}
 
-                {missionEditorOpen ? (
+                {selectedFeature === "quiz" ? (
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <h2 className="text-base font-bold text-zinc-900">クイズ管理</h2>
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
+                        利用中
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <ListChecks className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">問題数</p>
+                        <p className="text-sm font-bold text-zinc-900">{quizStats.questionCount}問</p>
+                      </div>
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <CheckCircle2 className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">回答数</p>
+                        <p className="text-sm font-bold text-zinc-900">{quizStats.answerCount}件</p>
+                      </div>
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <BarChart3 className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">正解率</p>
+                        <p className="text-sm font-bold text-zinc-900">{quizCorrectRate}%</p>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/admin/${eventId}/quiz`}
+                      className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl bg-[#7C3AED] py-2.5 text-sm font-bold text-white shadow-sm touch-manipulation"
+                    >
+                      クイズ管理画面を開く
+                      <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </Link>
+                  </div>
+                ) : null}
+
+                {selectedFeature === "bingo" ? (
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <h2 className="text-base font-bold text-zinc-900">ビンゴ管理</h2>
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
+                        利用中
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <Users className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">参加者数</p>
+                        <p className="text-sm font-bold text-zinc-900">{bingoStats.participantCount}人</p>
+                      </div>
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <Bell className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">リーチ人数</p>
+                        <p className="text-sm font-bold text-zinc-900">{bingoStats.reachCount}人</p>
+                      </div>
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <Trophy className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">ビンゴ人数</p>
+                        <p className="text-sm font-bold text-zinc-900">{bingoStats.bingoCount}人</p>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/admin/${eventId}/bingo`}
+                      className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl bg-[#7C3AED] py-2.5 text-sm font-bold text-white shadow-sm touch-manipulation"
+                    >
+                      ビンゴ管理画面を開く
+                      <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </Link>
+                  </div>
+                ) : null}
+
+                {selectedFeature === "roulette" ? (
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <h2 className="text-base font-bold text-zinc-900">ルーレット管理</h2>
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
+                        利用中
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <ListChecks className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">候補数</p>
+                        <p className="text-sm font-bold text-zinc-900">{rouletteStats.candidateCount}件</p>
+                      </div>
+                      <div className="rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <BarChart3 className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">実行回数</p>
+                        <p className="text-sm font-bold text-zinc-900">{rouletteStats.executionCount}回</p>
+                      </div>
+                      <div className="col-span-2 rounded-lg bg-white/90 px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
+                        <CheckCircle2 className="mx-auto h-4 w-4 text-violet-600" strokeWidth={2} aria-hidden />
+                        <p className="mt-1 text-[10px] font-semibold text-zinc-500">最新結果</p>
+                        <p className="truncate text-sm font-bold text-zinc-900">{rouletteStats.latestResult}</p>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/admin/${eventId}/roulette`}
+                      className="mt-4 flex w-full items-center justify-center gap-1 rounded-xl bg-[#7C3AED] py-2.5 text-sm font-bold text-white shadow-sm touch-manipulation"
+                    >
+                      ルーレット管理画面を開く
+                      <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+                    </Link>
+                  </div>
+                ) : null}
+
+                {selectedFeature === "mission" && missionEditorOpen ? (
                   <div className="rounded-xl border border-violet-100 bg-white p-3 shadow-sm">
                     <h3 className="text-sm font-bold text-zinc-900">ミッションの編集</h3>
                     <div className="mt-3 flex flex-col gap-2">
