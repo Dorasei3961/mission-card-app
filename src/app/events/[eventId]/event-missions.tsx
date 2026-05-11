@@ -417,7 +417,7 @@ export function EventMissions({ eventId }: Props) {
         );
       } catch (error) {
         console.error("missionProgress save error:", error);
-        setErrorMessage("進捗の保存に失敗しました。Firestore ルールを確認してください。");
+        setErrorMessage("通信に失敗しました。もう一度お試しください。");
       }
     };
 

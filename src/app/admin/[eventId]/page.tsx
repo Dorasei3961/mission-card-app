@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
@@ -33,7 +34,7 @@ import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
 import { DEFAULT_EVENT_FEATURES, resolveEventFeatures, type EventFeatures } from "../../lib/event-features";
-import { getAdminAccess, setAdminAccess } from "../../lib/event-session";
+import { clearEventScopedStorage, getAdminAccess, setAdminAccess } from "../../lib/event-session";
 import {
   DEFAULT_MISSIONS_SEED,
   type MissionFields,
@@ -49,6 +50,7 @@ type AdminFeatureKey = "mission" | "quiz" | "bingo" | "roulette";
 const DEFAULT_CATEGORY_COLOR = "custom";
 
 export default function EventAdminPage({ params }: Props) {
+  const router = useRouter();
   const [eventId, setEventId] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<AdminMission[]>([]);
@@ -66,7 +68,6 @@ export default function EventAdminPage({ params }: Props) {
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
   const [pinSession, setPinSession] = useState(false);
   const [eventResolved, setEventResolved] = useState(false);
-  const [eventMissing, setEventMissing] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [gatePinInput, setGatePinInput] = useState("");
   const [gatePinError, setGatePinError] = useState("");
@@ -78,6 +79,9 @@ export default function EventAdminPage({ params }: Props) {
   const [adminPinDisplay, setAdminPinDisplay] = useState("");
   const [eventFeatures, setEventFeatures] = useState<EventFeatures>(DEFAULT_EVENT_FEATURES);
   const [featureUpdatingKey, setFeatureUpdatingKey] = useState<AdminFeatureKey | null>(null);
+  const [rankingToggleBusy, setRankingToggleBusy] = useState(false);
+  const [closeEventBusy, setCloseEventBusy] = useState(false);
+  const [missionCreateBusy, setMissionCreateBusy] = useState(false);
   const [createdAtDisplay, setCreatedAtDisplay] = useState("—");
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -116,7 +120,6 @@ export default function EventAdminPage({ params }: Props) {
   useEffect(() => {
     if (!eventId) return;
     setEventResolved(false);
-    setEventMissing(false);
     setPinSession(getAdminAccess(eventId));
     setGatePinInput("");
     setGatePinError("");
@@ -129,20 +132,16 @@ export default function EventAdminPage({ params }: Props) {
 
   useEffect(() => {
     if (!eventId) return;
-    const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
-      setEventResolved(true);
-      if (!snap.exists()) {
-        setEventTitle("イベントが見つかりません");
-        setRankingVisible(false);
-        setCreatorNameDisplay("");
-        setJoinPasswordDisplay("");
-        setAdminPinDisplay("");
-        setCreatedAtDisplay("—");
-        setEventMissing(true);
-        return;
-      }
-      setEventMissing(false);
-      const data = snap.data() as {
+    const unsub = onSnapshot(
+      doc(db, "events", eventId),
+      (snap) => {
+        setEventResolved(true);
+        if (!snap.exists()) {
+          clearEventScopedStorage(eventId);
+          router.replace("/");
+          return;
+        }
+        const data = snap.data() as {
         title?: string;
         creatorName?: string;
         joinPassword?: unknown;
@@ -176,9 +175,14 @@ export default function EventAdminPage({ params }: Props) {
           ? `${window.location.origin}/join?code=${encodeURIComponent(code)}`
           : "";
       setJoinUrl((data.joinUrl?.trim() || generated || `/join?code=${encodeURIComponent(code)}`).trim());
-    });
+      },
+      (err) => {
+        console.error("[admin] events snapshot error", { eventId, err });
+        setMessage("通信に失敗しました。もう一度お試しください。");
+      },
+    );
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
 
   useEffect(() => {
     if (!eventId || !canManage || !joinCode) return;
@@ -250,10 +254,10 @@ export default function EventAdminPage({ params }: Props) {
   };
 
   useEffect(() => {
-    if (!eventId || !authReady || !eventResolved || eventMissing || !canManage) return;
+    if (!eventId || !authReady || !eventResolved || !canManage) return;
     void loadMissions();
     void loadParticipants();
-  }, [eventId, authReady, eventResolved, eventMissing, canManage]);
+  }, [eventId, authReady, eventResolved, canManage]);
 
   useEffect(() => {
     if (!eventId || !canManage) return;
@@ -318,13 +322,21 @@ export default function EventAdminPage({ params }: Props) {
   }, [eventId, canManage]);
 
   const toggleRankingVisible = async () => {
-    if (!canEdit) return;
-    await setDoc(
-      doc(db, "events", eventId),
-      { rankingVisible: !rankingVisible, updatedAt: serverTimestamp() },
-      { merge: true },
-    );
-    setMessage(`ランキング表示を${!rankingVisible ? "ON" : "OFF"}にしました。`);
+    if (!canEdit || rankingToggleBusy) return;
+    setRankingToggleBusy(true);
+    try {
+      await setDoc(
+        doc(db, "events", eventId),
+        { rankingVisible: !rankingVisible, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      setMessage(`ランキング表示を${!rankingVisible ? "ON" : "OFF"}にしました。`);
+    } catch (e) {
+      console.error("[admin] toggleRankingVisible", e);
+      setMessage("保存に失敗しました。再読み込み後にもう一度お試しください。");
+    } finally {
+      setRankingToggleBusy(false);
+    }
   };
 
   const toggleFeature = async (featureKey: AdminFeatureKey) => {
@@ -346,14 +358,14 @@ export default function EventAdminPage({ params }: Props) {
       setMessage(`機能設定を更新しました（${featureKey}: ${nextValue ? "ON" : "OFF"}）。`);
     } catch (e) {
       console.error(e);
-      setMessage("機能設定の更新に失敗しました。");
+      setMessage("保存に失敗しました。再読み込み後にもう一度お試しください。");
     } finally {
       setFeatureUpdatingKey(null);
     }
   };
 
   const handleCreateMission = async () => {
-    if (!canEdit) return;
+    if (!canEdit || missionCreateBusy) return;
     const parsedPoints = Number(points);
     const parsedPerUnit = Number(pointPerUnit);
     const parsedOrder = Number(order);
@@ -396,20 +408,28 @@ export default function EventAdminPage({ params }: Props) {
       payload.pointPerUnit = parsedPerUnit;
       payload.unitLabel = "";
     }
-    await setDoc(doc(db, "events", eventId, "missions", String(id)), {
-      ...payload,
-      eventId,
-    });
-    setTitle("");
-    setDescription("");
-    setCategory("");
-    setMissionKind("checkbox");
-    setPoints("10");
-    setPointPerUnit("50");
-    setOrder("");
-    setIsActiveNew(true);
-    setMessage("保存しました。");
-    await loadMissions();
+    setMissionCreateBusy(true);
+    try {
+      await setDoc(doc(db, "events", eventId, "missions", String(id)), {
+        ...payload,
+        eventId,
+      });
+      setTitle("");
+      setDescription("");
+      setCategory("");
+      setMissionKind("checkbox");
+      setPoints("10");
+      setPointPerUnit("50");
+      setOrder("");
+      setIsActiveNew(true);
+      setMessage("保存しました。");
+      await loadMissions();
+    } catch (e) {
+      console.error("[admin] handleCreateMission", e);
+      setMessage("保存に失敗しました。再読み込み後にもう一度お試しください。");
+    } finally {
+      setMissionCreateBusy(false);
+    }
   };
 
   const handleUpdateMission = async (mission: AdminMission) => {
@@ -485,7 +505,8 @@ export default function EventAdminPage({ params }: Props) {
       await ensureDefaultAdminPinIfMissing(eventId);
       const snap = await getDoc(doc(db, "events", eventId));
       if (!snap.exists()) {
-        setGatePinError("イベントが見つかりません。");
+        clearEventScopedStorage(eventId);
+        router.replace("/");
         return;
       }
       const pinStored = String((snap.data() as { adminPin?: unknown }).adminPin ?? "").trim();
@@ -509,17 +530,25 @@ export default function EventAdminPage({ params }: Props) {
   };
 
   const closeEvent = async () => {
-    if (!canManage || eventStatus === "closed") return;
-    await setDoc(
-      doc(db, "events", eventId),
-      {
-        status: "closed",
-        closedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-    setMessage("イベントを終了しました。以後は閲覧のみです。");
+    if (!canManage || eventStatus === "closed" || closeEventBusy) return;
+    setCloseEventBusy(true);
+    try {
+      await setDoc(
+        doc(db, "events", eventId),
+        {
+          status: "closed",
+          closedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      setMessage("イベントを終了しました。以後は閲覧のみです。");
+    } catch (e) {
+      console.error("[admin] closeEvent", e);
+      setMessage("保存に失敗しました。再読み込み後にもう一度お試しください。");
+    } finally {
+      setCloseEventBusy(false);
+    }
   };
 
   const copyJoinUrl = async () => {
@@ -576,20 +605,6 @@ export default function EventAdminPage({ params }: Props) {
       <div className="min-h-screen bg-zinc-100 p-4">
         <main className="mx-auto flex max-w-md flex-col items-center justify-center pt-24">
           <p className="text-sm font-semibold text-zinc-600">読み込み中…</p>
-        </main>
-      </div>
-    );
-  }
-
-  if (eventMissing) {
-    return (
-      <div className="min-h-screen bg-zinc-100 p-4">
-        <main className="mx-auto max-w-md rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <h1 className="text-xl font-black text-zinc-900">運営管理画面</h1>
-          <p className="mt-3 text-sm font-semibold text-red-600">イベントが見つかりません</p>
-          <Link href="/events" className="mt-4 inline-flex text-sm font-semibold text-blue-600 underline">
-            イベント一覧へ
-          </Link>
         </main>
       </div>
     );
@@ -1089,10 +1104,10 @@ export default function EventAdminPage({ params }: Props) {
                       </label>
                       <button
                         onClick={() => void handleCreateMission()}
-                        disabled={!canEdit}
+                        disabled={!canEdit || missionCreateBusy}
                         className="rounded-xl bg-[#7C3AED] px-3 py-2 text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
                       >
-                        項目を追加
+                        {missionCreateBusy ? "保存中…" : "項目を追加"}
                       </button>
                     </div>
 
@@ -1338,12 +1353,12 @@ export default function EventAdminPage({ params }: Props) {
                 <p className="mt-1 text-[11px] text-zinc-500">参加者向けランキング画面の公開設定です。</p>
                 <button
                   onClick={() => void toggleRankingVisible()}
-                  disabled={!canEdit}
+                  disabled={!canEdit || rankingToggleBusy}
                   className={`mt-3 w-full rounded-xl py-2.5 text-xs font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation ${
                     rankingVisible ? "bg-emerald-600" : "bg-zinc-600"
                   }`}
                 >
-                  ランキング表示: {rankingVisible ? "ON" : "OFF"}
+                  {rankingToggleBusy ? "保存中…" : `ランキング表示: ${rankingVisible ? "ON" : "OFF"}`}
                 </button>
                 <Link
                   href={`/events/${eventId}/ranking`}
@@ -1369,14 +1384,14 @@ export default function EventAdminPage({ params }: Props) {
           <button
             type="button"
             onClick={() => void closeEvent()}
-            disabled={!canManage || eventStatus === "closed"}
+            disabled={!canManage || eventStatus === "closed" || closeEventBusy}
             className="flex w-full flex-col items-start gap-0.5 rounded-xl border border-red-200 bg-white px-3 py-3 text-left shadow-sm disabled:opacity-50 touch-manipulation"
           >
             <span className="flex items-center gap-2 text-sm font-bold text-red-600">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-red-100 text-red-600">
                 <Bell className="h-4 w-4" strokeWidth={2} aria-hidden />
               </span>
-              イベントを終了する
+              {closeEventBusy ? "終了処理中…" : "イベントを終了する"}
             </span>
             <span className="pl-9 text-[11px] font-medium text-red-700/90">
               イベントを終了し、参加画面の運営操作を制限します。

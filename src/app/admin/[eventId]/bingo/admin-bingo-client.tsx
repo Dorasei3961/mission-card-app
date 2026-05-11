@@ -18,6 +18,7 @@ import { Dices } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "../../../lib/firebase";
 import { getAdminAccess } from "../../../lib/event-session";
+import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
   DEFAULT_BINGO_SETTINGS,
@@ -43,6 +44,7 @@ function pickRandomUndrawn(min: number, max: number, drawnSet: Set<number>): num
 
 export function AdminBingoClient({ eventId }: Props) {
   const router = useRouter();
+  useRedirectIfEventMissing(eventId);
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [eventTitle, setEventTitle] = useState("イベント");
   const [settings, setSettings] = useState<BingoSettings>(DEFAULT_BINGO_SETTINGS);
@@ -75,23 +77,22 @@ export function AdminBingoClient({ eventId }: Props) {
       const stateRef = doc(db, "events", eventId, "bingoState", "main");
       const evRef = doc(db, "events", eventId);
       const evSnap = await getDoc(evRef);
-      if (evSnap.exists()) {
-        const data = evSnap.data() as { features?: unknown };
-        const f = resolveEventFeatures(data.features);
-        await setDoc(
-          evRef,
-          {
-            features: {
-              mission: f.mission,
-              quiz: f.quiz,
-              bingo: true,
-              roulette: f.roulette,
-            },
-            updatedAt: serverTimestamp(),
+      if (!evSnap.exists()) return;
+      const evData = evSnap.data() as { features?: unknown };
+      const f = resolveEventFeatures(evData.features);
+      await setDoc(
+        evRef,
+        {
+          features: {
+            mission: f.mission,
+            quiz: f.quiz,
+            bingo: true,
+            roulette: f.roulette,
           },
-          { merge: true },
-        );
-      }
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
       const settingsSnap = await getDoc(settingsRef);
       if (!settingsSnap.exists()) {
         await setDoc(settingsRef, { ...DEFAULT_BINGO_SETTINGS, updatedAt: serverTimestamp() }, { merge: true });
@@ -187,6 +188,7 @@ export function AdminBingoClient({ eventId }: Props) {
   };
 
   const drawNext = async () => {
+    if (busy) return;
     const n = pickRandomUndrawn(settings.minNumber, settings.maxNumber, drawnSet);
     if (n === null) {
       window.alert("抽選できる番号がありません。");
@@ -201,6 +203,7 @@ export function AdminBingoClient({ eventId }: Props) {
   };
 
   const pickManual = async (num: number) => {
+    if (busy) return;
     if (num < settings.minNumber || num > settings.maxNumber) return;
     setBusy(true);
     try {
@@ -228,6 +231,7 @@ export function AdminBingoClient({ eventId }: Props) {
   };
 
   const resetAll = async () => {
+    if (busy) return;
     const ok = window.confirm("抽選をリセットします。参加者カードも再生成されます。よろしいですか？");
     if (!ok) return;
     setBusy(true);
@@ -245,6 +249,7 @@ export function AdminBingoClient({ eventId }: Props) {
   };
 
   const changeGrid = async (nextSize: 3 | 5) => {
+    if (busy) return;
     if (nextSize === settings.gridSize) return;
     let proceed = true;
     if (cards.length > 0) {

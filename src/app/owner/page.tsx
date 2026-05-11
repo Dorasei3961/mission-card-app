@@ -112,6 +112,7 @@ export default function OwnerPage() {
 
   const patchEvent = async (eventId: string, body: Record<string, unknown>) => {
     if (!authHeaders) return;
+    if (busyId !== null) return;
     setBusyId(eventId);
     setActionMessage("");
     try {
@@ -129,7 +130,8 @@ export default function OwnerPage() {
       if (sessionPin) void loadEvents(sessionPin);
       setPwDraft((d) => ({ ...d, [eventId]: "" }));
       setPinDraft((d) => ({ ...d, [eventId]: "" }));
-    } catch {
+    } catch (e) {
+      console.error("[owner] patchEvent", e);
       setActionMessage("更新に失敗しました");
     } finally {
       setBusyId(null);
@@ -138,6 +140,7 @@ export default function OwnerPage() {
 
   const deleteEvent = async (eventId: string) => {
     if (!authHeaders) return;
+    if (busyId !== null) return;
     if (!window.confirm("このイベントと関連データを削除します。よろしいですか？")) return;
     setBusyId(eventId);
     setActionMessage("");
@@ -153,7 +156,8 @@ export default function OwnerPage() {
       }
       setActionMessage("削除しました");
       if (sessionPin) void loadEvents(sessionPin);
-    } catch {
+    } catch (e) {
+      console.error("[owner] deleteEvent", e);
       setActionMessage("削除に失敗しました");
     } finally {
       setBusyId(null);

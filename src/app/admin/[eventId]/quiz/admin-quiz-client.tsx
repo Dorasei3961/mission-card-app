@@ -6,11 +6,13 @@ import { ChevronLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { QuizAdminPanel } from "../../../events/[eventId]/features/quiz-admin-panel";
 import { getAdminAccess } from "../../../lib/event-session";
+import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
 
 type Props = { eventId: string };
 
 export function AdminQuizClient({ eventId }: Props) {
   const router = useRouter();
+  useRedirectIfEventMissing(eventId);
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {

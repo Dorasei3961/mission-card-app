@@ -20,6 +20,7 @@ import { GripVertical, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../../../lib/firebase";
 import { getAdminAccess } from "../../../lib/event-session";
+import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
   DEFAULT_ROULETTE_SETTINGS,
@@ -62,6 +63,7 @@ function formatHistTime(ts: Timestamp | undefined): string {
 
 export function AdminRouletteClient({ eventId }: Props) {
   const router = useRouter();
+  useRedirectIfEventMissing(eventId);
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [eventTitle, setEventTitle] = useState("イベント");
   const [settings, setSettings] = useState(() => ({ ...DEFAULT_ROULETTE_SETTINGS }));
@@ -96,23 +98,22 @@ export function AdminRouletteClient({ eventId }: Props) {
       const settingsRef = doc(db, "events", eventId, "rouletteSettings", "main");
       const stateRef = doc(db, "events", eventId, "rouletteState", "main");
       const master = await getDoc(evRef);
-      if (master.exists()) {
-        const data = master.data() as { features?: unknown };
-        const f = resolveEventFeatures(data.features);
-        await setDoc(
-          evRef,
-          {
-            features: {
-              mission: f.mission,
-              quiz: f.quiz,
-              bingo: f.bingo,
-              roulette: true,
-            },
-            updatedAt: serverTimestamp(),
+      if (!master.exists()) return;
+      const evData = master.data() as { features?: unknown };
+      const f = resolveEventFeatures(evData.features);
+      await setDoc(
+        evRef,
+        {
+          features: {
+            mission: f.mission,
+            quiz: f.quiz,
+            bingo: f.bingo,
+            roulette: true,
           },
-          { merge: true },
-        );
-      }
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
       await setDoc(
         settingsRef,
         { ...DEFAULT_ROULETTE_SETTINGS, updatedAt: serverTimestamp() },

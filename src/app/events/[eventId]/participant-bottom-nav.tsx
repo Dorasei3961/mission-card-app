@@ -1,8 +1,10 @@
 "use client";
 
-import Link from "next/link";
+import { doc, getDoc } from "firebase/firestore";
 import { usePathname, useRouter } from "next/navigation";
 import { Home, LayoutGrid, Shield, Trophy } from "lucide-react";
+import { clearEventScopedStorage } from "../../lib/event-session";
+import { db } from "../../lib/firebase";
 import {
   getLastEventPage,
   recordParticipantMainPage,
@@ -25,6 +27,21 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
 
   const base = `/events/${eventId}`;
 
+  /** 削除済み等で events/{eventId} が無いときは TOP へ。タブ押下のたびに確認する */
+  const navigateIfEventExists = async (navigate: () => void) => {
+    try {
+      const snap = await getDoc(doc(db, "events", eventId));
+      if (!snap.exists()) {
+        clearEventScopedStorage(eventId);
+        router.replace("/");
+        return;
+      }
+      navigate();
+    } catch (e) {
+      console.error("[ParticipantBottomNav] event existence check failed", { eventId, e });
+    }
+  };
+
   const isHomeSection =
     pathname === base ||
     pathname === `${base}/` ||
@@ -40,16 +57,28 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
   const homeNavActive = isHomeSection && !featuresNavActive && !rankingNavActive && !adminNavActive;
 
   const goHomeTarget = () => {
-    router.push(getLastEventPage(eventId));
+    void navigateIfEventExists(() => {
+      router.push(getLastEventPage(eventId));
+    });
   };
 
   const goFeatures = () => {
-    recordParticipantMainPage(eventId, `/events/${eventId}/features`);
-    router.push(`/events/${eventId}/features?from=participant`);
+    void navigateIfEventExists(() => {
+      recordParticipantMainPage(eventId, `/events/${eventId}/features`);
+      router.push(`/events/${eventId}/features?from=participant`);
+    });
   };
 
   const goAdmin = () => {
-    router.push(`/events/${eventId}/manage`);
+    void navigateIfEventExists(() => {
+      router.push(`/events/${eventId}/manage`);
+    });
+  };
+
+  const goRanking = () => {
+    void navigateIfEventExists(() => {
+      router.push(`/events/${eventId}/ranking`);
+    });
   };
 
   const itemClass = (active: boolean) =>
@@ -72,10 +101,10 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
           機能
         </button>
         {showRankingLink ? (
-          <Link href={`/events/${eventId}/ranking`} className={itemClass(rankingNavActive)}>
+          <button type="button" onClick={() => goRanking()} className={itemClass(rankingNavActive)}>
             <Trophy className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
             ランキング
-          </Link>
+          </button>
         ) : (
           <div className={`${itemClass(false)} cursor-default opacity-40`} title="ランキングは非公開です">
             <Trophy className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />

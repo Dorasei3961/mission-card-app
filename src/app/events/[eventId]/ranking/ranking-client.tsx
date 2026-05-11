@@ -33,6 +33,13 @@ function pickNonEmptyString(...values: unknown[]): string {
 }
 
 function resolveParticipantDisplayName(data: Record<string, unknown>): string {
+  const nested = data.ranking;
+  const nestedObj =
+    nested && typeof nested === "object" && nested !== null ? (nested as Record<string, unknown>) : null;
+  const fromRanking = nestedObj
+    ? pickNonEmptyString(nestedObj.participantName, nestedObj.name, nestedObj.displayName)
+    : "";
+  if (fromRanking) return fromRanking;
   const resolved = pickNonEmptyString(
     data.participantName,
     data.name,
@@ -53,25 +60,34 @@ export function RankingClient({ eventId }: Props) {
   const [participantsReady, setParticipantsReady] = useState(false);
   const [tab, setTab] = useState<RankTab>("all");
   const [myParticipantKey, setMyParticipantKey] = useState<string | null>(null);
+  const [listError, setListError] = useState("");
 
   useEffect(() => {
     setEventMetaReady(false);
-    const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
-      if (!snap.exists()) {
-        clearEventScopedStorage(eventId);
-        router.replace("/");
-        return;
-      }
-      const data = snap.data() as {
-        title?: string;
-        rankingVisible?: boolean;
-        status?: "active" | "closed";
-      };
-      setEventTitle(String(data.title ?? "イベント"));
-      setRankingVisible(Boolean(data.rankingVisible));
-      setIsClosed(data.status === "closed");
-      setEventMetaReady(true);
-    });
+    setListError("");
+    const unsub = onSnapshot(
+      doc(db, "events", eventId),
+      (snap) => {
+        if (!snap.exists()) {
+          clearEventScopedStorage(eventId);
+          router.replace("/");
+          return;
+        }
+        const data = snap.data() as {
+          title?: string;
+          rankingVisible?: boolean;
+          status?: "active" | "closed";
+        };
+        setEventTitle(String(data.title ?? "イベント"));
+        setRankingVisible(Boolean(data.rankingVisible));
+        setIsClosed(data.status === "closed");
+        setEventMetaReady(true);
+      },
+      (err) => {
+        console.error("[ranking] event snapshot error", { eventId, err });
+        setListError("通信に失敗しました。もう一度お試しください。");
+      },
+    );
     return () => unsub();
   }, [eventId, router]);
 
@@ -92,23 +108,32 @@ export function RankingClient({ eventId }: Props) {
   useEffect(() => {
     setParticipantsReady(false);
     const coll = collection(db, "events", eventId, "participants");
-    const unsub = onSnapshot(coll, (snap) => {
-      const rows: Participant[] = snap.docs.map((d) => {
-        const raw = d.data() as Record<string, unknown>;
-        const pts = raw.totalPoints;
-        return {
-          uid: d.id,
-          name: resolveParticipantDisplayName(raw),
-          totalPoints: typeof pts === "number" && Number.isFinite(pts) ? pts : 0,
-        };
-      });
-      rows.sort((a, b) => {
-        if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
-        return a.name.localeCompare(b.name, "ja");
-      });
-      setParticipants(rows);
-      setParticipantsReady(true);
-    });
+    const unsub = onSnapshot(
+      coll,
+      (snap) => {
+        setListError("");
+        const rows: Participant[] = snap.docs.map((d) => {
+          const raw = d.data() as Record<string, unknown>;
+          const pts = raw.totalPoints;
+          return {
+            uid: d.id,
+            name: resolveParticipantDisplayName(raw),
+            totalPoints: typeof pts === "number" && Number.isFinite(pts) ? pts : 0,
+          };
+        });
+        rows.sort((a, b) => {
+          if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+          return a.name.localeCompare(b.name, "ja");
+        });
+        setParticipants(rows);
+        setParticipantsReady(true);
+      },
+      (err) => {
+        console.error("[ranking] participants snapshot error", { eventId, err });
+        setListError("通信に失敗しました。もう一度お試しください。");
+        setParticipantsReady(true);
+      },
+    );
     return () => unsub();
   }, [eventId]);
 
@@ -175,6 +200,12 @@ export function RankingClient({ eventId }: Props) {
           <h1 className="text-xl font-bold text-[#111827]">ランキング</h1>
           <p className="mt-1 text-sm text-[#6B7280]">{eventTitle} · みんなのポイントランキング</p>
         </header>
+
+        {listError ? (
+          <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-center text-sm font-semibold text-red-800">
+            {listError}
+          </p>
+        ) : null}
 
         {!listLoading && !rankingVisible && !isClosed ? (
           <section className="rounded-2xl border border-zinc-100 bg-white p-6 text-center shadow-sm">
