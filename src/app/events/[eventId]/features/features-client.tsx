@@ -135,6 +135,14 @@ export function EventFeaturesClient({ eventId }: Props) {
     window.alert("今後追加予定です");
   };
 
+  const handleGoTop = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(`last_event_page_${eventId}`);
+      sessionStorage.setItem("skip_home_event_autoredirect_once", "1");
+    }
+    router.replace("/");
+  };
+
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${fromAdmin ? "pb-10" : PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4 pb-2">
@@ -142,7 +150,7 @@ export function EventFeaturesClient({ eventId }: Props) {
           <div className="grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
             <button
               type="button"
-              onClick={() => router.push("/")}
+              onClick={handleGoTop}
               className="inline-flex h-9 items-center gap-1 rounded-[12px] bg-white px-3 text-[13px] font-semibold text-[#111827] shadow-[0_1px_3px_rgba(15,23,42,0.07)] ring-1 ring-zinc-100 touch-manipulation"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2.25} aria-hidden />

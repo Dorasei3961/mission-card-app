@@ -19,6 +19,14 @@ export default function HomePage() {
   const [activeEvents, setActiveEvents] = useState<ActiveEvent[]>([]);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const skipOnce = sessionStorage.getItem("skip_home_event_autoredirect_once");
+      if (skipOnce === "1") {
+        sessionStorage.removeItem("skip_home_event_autoredirect_once");
+        setChecking(false);
+        return;
+      }
+    }
     const session = getEventSession();
     if (session?.eventId) {
       router.replace(`/events/${session.eventId}`);
