@@ -27,6 +27,8 @@ import {
   INITIAL_ROULETTE_ITEMS_SEED,
   normalizeRouletteSettings,
   normalizeRouletteState,
+  clockwiseRotationToMatchStoredAngle,
+  ROULETTE_SPIN_TRANSITION_EASING,
 } from "../../../lib/roulette-schema";
 import {
   clearAllRouletteHistory,
@@ -207,14 +209,18 @@ export function AdminRouletteClient({ eventId }: Props) {
     const prev = prevStatusRef.current;
     prevStatusRef.current = state.status;
     if (state.status === "spinning" && prev !== "spinning") {
-      const extraTurns = 6 + (state.spinNonce % 4);
-      setVisualRotation((r) => r + extraTurns * 360);
-    }
-    if (state.status === "finished" && typeof state.currentRotation === "number") {
-      setVisualRotation(state.currentRotation);
+      const extraSpins = 5 + (state.spinNonce % 4);
+      setVisualRotation((r) => r + extraSpins * 360);
     }
     if (state.status === "idle") setVisualRotation(0);
-  }, [state.status, state.currentRotation, state.spinNonce]);
+  }, [state.status, state.spinNonce]);
+
+  useEffect(() => {
+    if (state.status !== "finished" || typeof state.currentRotation !== "number") return;
+    setVisualRotation((prev) =>
+      clockwiseRotationToMatchStoredAngle(prev, state.currentRotation as number),
+    );
+  }, [state.status, state.currentRotation]);
 
   useEffect(() => {
     if (state.status !== "spinning") return;
@@ -454,7 +460,7 @@ export function AdminRouletteClient({ eventId }: Props) {
                     ? 650
                     : 0
               }
-              transitionEasing="cubic-bezier(0.22, 1, 0.36, 1)"
+              transitionEasing={ROULETTE_SPIN_TRANSITION_EASING}
               centerText={centerText}
             />
           </div>

@@ -141,6 +141,25 @@ export function computeFinalRotationDeg(winnerIndex: number, segmentCount: numbe
   return fullSpins * 360 + align;
 }
 
+function positiveMod(n: number, m: number): number {
+  return ((n % m) + m) % m;
+}
+
+/** ルーレット演出：逆回転させず、現在の累積角から時計回りに進めて stored と同じ向き（mod 360）で止める */
+export function clockwiseRotationToMatchStoredAngle(
+  currentVisualDeg: number,
+  storedRotationDeg: number,
+): number {
+  const targetMod = positiveMod(storedRotationDeg, 360);
+  const curMod = positiveMod(currentVisualDeg, 360);
+  let delta = (targetMod - curMod + 360) % 360;
+  if (delta < 1e-6) return currentVisualDeg;
+  return currentVisualDeg + delta;
+}
+
+/** メイン回転の減速カーブ（ease-out 系）。Firestore・抽選ロジックとは無関係 */
+export const ROULETTE_SPIN_TRANSITION_EASING = "cubic-bezier(0.12, 0.76, 0.24, 1)";
+
 export function normalizeRouletteSettings(data: unknown): RouletteSettings {
   if (!data || typeof data !== "object") return { ...DEFAULT_ROULETTE_SETTINGS };
   const o = data as Record<string, unknown>;

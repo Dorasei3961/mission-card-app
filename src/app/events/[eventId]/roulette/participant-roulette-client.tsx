@@ -13,7 +13,14 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { auth, db } from "../../../lib/firebase";
 import { resolveEventFeatures } from "../../../lib/event-features";
-import { normalizeRouletteSettings, normalizeRouletteState, DEFAULT_ROULETTE_SETTINGS, DEFAULT_ROULETTE_STATE } from "../../../lib/roulette-schema";
+import {
+  normalizeRouletteSettings,
+  normalizeRouletteState,
+  DEFAULT_ROULETTE_SETTINGS,
+  DEFAULT_ROULETTE_STATE,
+  clockwiseRotationToMatchStoredAngle,
+  ROULETTE_SPIN_TRANSITION_EASING,
+} from "../../../lib/roulette-schema";
 import {
   finalizeRouletteSpin,
   sortRouletteItemsByOrder,
@@ -153,21 +160,26 @@ export function ParticipantRouletteClient({ eventId }: Props) {
 
   const activeSorted = useMemo(() => items.filter((i) => i.active), [items]);
 
-  /** 回転開始：数周分すぐに回転角を増やす（transition で回転アニメーション） */
+  /** 回転開始：累積角に時計回りで数周分を足す（1本の transition で減速停止まで） */
   useEffect(() => {
     const prev = prevStatusRef.current;
     prevStatusRef.current = state.status;
     if (state.status === "spinning" && prev !== "spinning") {
-      const extraTurns = 6 + (state.spinNonce % 4);
-      setVisualRotation((r) => r + extraTurns * 360);
-    }
-    if (state.status === "finished" && typeof state.currentRotation === "number") {
-      setVisualRotation(state.currentRotation);
+      const extraSpins = 5 + (state.spinNonce % 4);
+      setVisualRotation((r) => r + extraSpins * 360);
     }
     if (state.status === "idle") {
       setVisualRotation(0);
     }
-  }, [state.status, state.currentRotation, state.spinNonce]);
+  }, [state.status, state.spinNonce]);
+
+  /** 結果確定：累積角を維持したまま、時計回りに最小限足して Firestore の向きと一致（逆回転しない） */
+  useEffect(() => {
+    if (state.status !== "finished" || typeof state.currentRotation !== "number") return;
+    setVisualRotation((prev) =>
+      clockwiseRotationToMatchStoredAngle(prev, state.currentRotation as number),
+    );
+  }, [state.status, state.currentRotation]);
 
   useEffect(() => {
     if (state.status !== "spinning") return;
@@ -256,9 +268,7 @@ export function ParticipantRouletteClient({ eventId }: Props) {
                     ? 650
                     : 0
               }
-              transitionEasing={
-                state.status === "spinning" ? "cubic-bezier(0.22, 1, 0.36, 1)" : "cubic-bezier(0.22, 1, 0.36, 1)"
-              }
+              transitionEasing={ROULETTE_SPIN_TRANSITION_EASING}
               centerText={centerMainText}
             />
           </div>
