@@ -143,10 +143,10 @@ export function EventFeaturesClient({ eventId }: Props) {
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="inline-flex h-10 items-center gap-1.5 rounded-[12px] bg-white px-3.5 text-sm font-semibold text-[#111827] shadow-[0_1px_4px_rgba(15,23,42,0.08)] ring-1 ring-zinc-100 touch-manipulation"
+              className="inline-flex h-9 items-center gap-1 rounded-[12px] bg-white px-3 text-[13px] font-semibold text-[#111827] shadow-[0_1px_3px_rgba(15,23,42,0.07)] ring-1 ring-zinc-100 touch-manipulation"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2.25} aria-hidden />
-              TOPへ戻る
+              TOP
             </button>
             <h1 className="max-w-[52vw] justify-self-center truncate text-center text-[20px] font-extrabold text-[#111827]">
               {eventTitle}
