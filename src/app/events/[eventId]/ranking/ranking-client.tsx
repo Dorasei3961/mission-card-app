@@ -1,7 +1,7 @@
 "use client";
 
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
@@ -21,17 +21,41 @@ type Props = {
 
 type RankTab = "all" | "team" | "self";
 
+/** participants ドキュメントから表示名を決定（フィールド揺れに対応） */
+function pickNonEmptyString(...values: unknown[]): string {
+  for (const v of values) {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t) return t;
+    }
+  }
+  return "";
+}
+
+function resolveParticipantDisplayName(data: Record<string, unknown>): string {
+  const resolved = pickNonEmptyString(
+    data.participantName,
+    data.name,
+    data.displayName,
+  );
+  return resolved || "名前未設定";
+}
+
 export function RankingClient({ eventId }: Props) {
   const router = useRouter();
   const [eventTitle, setEventTitle] = useState("ランキング");
   const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [loading, setLoading] = useState(true);
+  /** イベントメタの読み込み完了（ランキング公開可否など） */
+  const [eventMetaReady, setEventMetaReady] = useState(false);
+  /** participants の初回スナップショットを受信済みか（リロード時の空表示チラつき防止） */
+  const [participantsReady, setParticipantsReady] = useState(false);
   const [tab, setTab] = useState<RankTab>("all");
   const [myParticipantKey, setMyParticipantKey] = useState<string | null>(null);
 
   useEffect(() => {
+    setEventMetaReady(false);
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) {
         clearEventScopedStorage(eventId);
@@ -46,7 +70,7 @@ export function RankingClient({ eventId }: Props) {
       setEventTitle(String(data.title ?? "イベント"));
       setRankingVisible(Boolean(data.rankingVisible));
       setIsClosed(data.status === "closed");
-      setLoading(false);
+      setEventMetaReady(true);
     });
     return () => unsub();
   }, [eventId, router]);
@@ -66,21 +90,24 @@ export function RankingClient({ eventId }: Props) {
   }, [eventId]);
 
   useEffect(() => {
-    const q = query(
-      collection(db, "events", eventId, "participants"),
-      orderBy("totalPoints", "desc"),
-      orderBy("name", "asc"),
-    );
-    const unsub = onSnapshot(q, (snap) => {
-      const rows = snap.docs.map((d) => {
-        const data = d.data() as { name?: string; totalPoints?: number };
+    setParticipantsReady(false);
+    const coll = collection(db, "events", eventId, "participants");
+    const unsub = onSnapshot(coll, (snap) => {
+      const rows: Participant[] = snap.docs.map((d) => {
+        const raw = d.data() as Record<string, unknown>;
+        const pts = raw.totalPoints;
         return {
           uid: d.id,
-          name: data.name?.trim() || "未登録",
-          totalPoints: typeof data.totalPoints === "number" ? data.totalPoints : 0,
+          name: resolveParticipantDisplayName(raw),
+          totalPoints: typeof pts === "number" && Number.isFinite(pts) ? pts : 0,
         };
       });
+      rows.sort((a, b) => {
+        if (b.totalPoints !== a.totalPoints) return b.totalPoints - a.totalPoints;
+        return a.name.localeCompare(b.name, "ja");
+      });
       setParticipants(rows);
+      setParticipantsReady(true);
     });
     return () => unsub();
   }, [eventId]);
@@ -89,6 +116,8 @@ export function RankingClient({ eventId }: Props) {
     () => participants.map((p, index) => ({ ...p, rank: index + 1 })),
     [participants],
   );
+
+  const listLoading = !eventMetaReady || !participantsReady;
 
   const myRankRow = useMemo(() => {
     if (!myParticipantKey) return null;
@@ -114,20 +143,16 @@ export function RankingClient({ eventId }: Props) {
 
   const Row = ({ row }: { row: (typeof ranked)[0] }) => {
     const isSelf = myParticipantKey !== null && row.uid === myParticipantKey;
-    const initial = row.name.slice(0, 1) || "?";
     return (
       <div
         className={`flex items-center gap-3 rounded-2xl border border-zinc-100 px-4 py-3 shadow-sm ${
           isSelf ? "bg-violet-50 ring-1 ring-[#7C3AED]/20" : "bg-white"
         }`}
       >
-        <span className="w-8 shrink-0 text-center text-lg font-bold tabular-nums text-[#111827]">
-          {row.rank}
+        <span className="w-10 shrink-0 text-left text-lg font-bold tabular-nums text-[#111827]">
+          {row.rank}位
         </span>
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-sm font-bold text-[#7C3AED]">
-          {initial}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#111827]">{row.name}</span>
+        <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-[#111827]">{row.name}</span>
         <span className="shrink-0 text-sm font-bold tabular-nums text-[#111827]">{row.totalPoints} pt</span>
       </div>
     );
@@ -151,7 +176,7 @@ export function RankingClient({ eventId }: Props) {
           <p className="mt-1 text-sm text-[#6B7280]">{eventTitle} · みんなのポイントランキング</p>
         </header>
 
-        {!loading && !rankingVisible && !isClosed ? (
+        {!listLoading && !rankingVisible && !isClosed ? (
           <section className="rounded-2xl border border-zinc-100 bg-white p-6 text-center shadow-sm">
             <p className="text-sm font-bold text-[#111827]">現在ランキングは非公開です</p>
           </section>
@@ -183,13 +208,12 @@ export function RankingClient({ eventId }: Props) {
             ) : null}
 
             <section className="flex flex-col gap-3">
-              {listForTab().map((row) => (
-                <Row key={row.uid} row={row} />
-              ))}
-              {!ranked.length && loading ? (
+              {listLoading ? (
                 <p className="text-center text-sm text-[#6B7280]">読み込み中…</p>
-              ) : null}
-              {!ranked.length && !loading ? (
+              ) : (
+                listForTab().map((row) => <Row key={row.uid} row={row} />)
+              )}
+              {!listLoading && !ranked.length ? (
                 <p className="text-center text-sm text-[#6B7280]">参加者データがありません。</p>
               ) : null}
             </section>
