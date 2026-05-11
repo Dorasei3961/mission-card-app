@@ -138,19 +138,21 @@ export function EventFeaturesClient({ eventId }: Props) {
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${fromAdmin ? "pb-10" : PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4 pb-2">
-        <header className="rounded-[18px] border border-white/80 bg-white/95 p-4 shadow-sm">
-          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+        <header className="rounded-[18px] border border-white/80 bg-white/95 px-3 py-3 shadow-sm">
+          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-1.5">
             <button
               type="button"
               onClick={() => router.push("/")}
-              className="inline-flex h-10 items-center gap-1 rounded-[12px] bg-white px-3 text-xs font-bold text-[#111827] shadow-sm ring-1 ring-zinc-100 touch-manipulation"
+              className="inline-flex h-10 items-center gap-1.5 rounded-[12px] bg-white px-3.5 text-sm font-semibold text-[#111827] shadow-[0_1px_4px_rgba(15,23,42,0.08)] ring-1 ring-zinc-100 touch-manipulation"
             >
               <ChevronLeft className="h-4 w-4" strokeWidth={2.25} aria-hidden />
               TOPへ戻る
             </button>
-            <h1 className="truncate text-center text-[19px] font-bold text-[#111827]">{eventTitle}</h1>
+            <h1 className="max-w-[52vw] justify-self-center truncate text-center text-[20px] font-extrabold text-[#111827]">
+              {eventTitle}
+            </h1>
             <span
-              className={`justify-self-end rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+              className={`justify-self-end rounded-full px-2.5 py-1 text-[13px] font-semibold leading-none ${
                 eventActive
                   ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200"
                   : "bg-zinc-100 text-[#6B7280] ring-1 ring-zinc-200"
