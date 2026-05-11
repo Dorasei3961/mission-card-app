@@ -198,7 +198,11 @@ export function EventFeaturesClient({ eventId }: Props) {
                   if (fromAdmin) router.push(`/admin/${eventId}`);
                   else router.push(`/events/${eventId}`);
                 }}
-                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-50 touch-manipulation"
+                className={`flex w-full items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm touch-manipulation ${
+                  features.mission || fromAdmin
+                    ? "border-zinc-100 transition active:scale-[0.99]"
+                    : "cursor-default border-zinc-200"
+                }`}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-[#7C3AED]">
                   <Target className="h-6 w-6" strokeWidth={2} aria-hidden />
@@ -206,7 +210,13 @@ export function EventFeaturesClient({ eventId }: Props) {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ミッションカード</span>
-                    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200">
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                        features.mission
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                          : "bg-[#F3F4F6] text-[#9CA3AF] ring-[#E5E7EB]"
+                      }`}
+                    >
                       {features.mission ? "利用中" : "未利用"}
                     </span>
                   </span>
@@ -217,7 +227,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     <p className="mt-2 text-[11px] font-semibold text-[#7C3AED]">{missionProgressLabel}</p>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-[#6B7280]">›</span>
+                <span className={`shrink-0 ${features.mission || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
               </button>
             </li>
 
@@ -231,7 +241,11 @@ export function EventFeaturesClient({ eventId }: Props) {
                   if (fromAdmin) router.push(`/admin/${eventId}/quiz`);
                   else router.push(`/events/${eventId}/quiz`);
                 }}
-                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-50 touch-manipulation"
+                className={`flex w-full items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm touch-manipulation ${
+                  features.quiz || fromAdmin
+                    ? "border-zinc-100 transition active:scale-[0.99]"
+                    : "cursor-default border-zinc-200"
+                }`}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
                   <HelpCircle className="h-6 w-6" strokeWidth={2} aria-hidden />
@@ -239,7 +253,13 @@ export function EventFeaturesClient({ eventId }: Props) {
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">クイズ</span>
-                    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200">
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                        features.quiz
+                          ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                          : "bg-[#F3F4F6] text-[#9CA3AF] ring-[#E5E7EB]"
+                      }`}
+                    >
                       {features.quiz ? "利用中" : "未利用"}
                     </span>
                   </span>
@@ -250,7 +270,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     <p className="mt-2 text-[11px] font-semibold text-[#6B7280]">{activeQuizHint}</p>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-[#6B7280]">›</span>
+                <span className={`shrink-0 ${features.quiz || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
               </button>
             </li>
 
@@ -267,7 +287,11 @@ export function EventFeaturesClient({ eventId }: Props) {
                   if (fromAdmin) router.push(`/admin/${eventId}/bingo`);
                   else router.push(`/events/${eventId}/bingo`);
                 }}
-                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60 touch-manipulation"
+                className={`flex w-full items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm touch-manipulation ${
+                  features.bingo || fromAdmin
+                    ? "border-zinc-100 transition active:scale-[0.99]"
+                    : "cursor-default border-zinc-200"
+                }`}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-50 text-zinc-500">
                   <LayoutGrid className="h-6 w-6" strokeWidth={2} aria-hidden />
@@ -287,7 +311,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     数字をそろえてビンゴを目指そう！
                   </p>
                 </span>
-                <span className="shrink-0 text-[#6B7280]">›</span>
+                <span className={`shrink-0 ${features.bingo || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
               </button>
             </li>
 
@@ -304,7 +328,11 @@ export function EventFeaturesClient({ eventId }: Props) {
                   if (fromAdmin) router.push(`/admin/${eventId}/roulette`);
                   else router.push(`/events/${eventId}/roulette`);
                 }}
-                className="flex w-full items-start gap-3 rounded-2xl border border-zinc-100 bg-white p-4 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-60 touch-manipulation"
+                className={`flex w-full items-start gap-3 rounded-2xl border bg-white p-4 text-left shadow-sm touch-manipulation ${
+                  features.roulette || fromAdmin
+                    ? "border-zinc-100 transition active:scale-[0.99]"
+                    : "cursor-default border-zinc-200"
+                }`}
               >
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-50 text-fuchsia-600">
                   <Sparkles className="h-6 w-6" strokeWidth={2} aria-hidden />
@@ -329,7 +357,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">今後追加予定</p>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-[#6B7280]">›</span>
+                <span className={`shrink-0 ${features.roulette || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
               </button>
             </li>
           </ul>
