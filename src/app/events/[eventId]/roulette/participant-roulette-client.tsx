@@ -261,15 +261,22 @@ export function ParticipantRouletteClient({ eventId }: Props) {
 
   const historyPreview = history.slice(0, 3);
 
+  if (!featureOn) {
+    return (
+      <div className={`${ROULETTE_GRADIENT} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
+        <main className="mx-auto flex w-full max-w-md flex-col gap-4 pb-6">
+          <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
+            この機能は現在利用できません。運営が有効化するまでお待ちください。
+          </div>
+        </main>
+        <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingLink} />
+      </div>
+    );
+  }
+
   return (
     <div className={`${ROULETTE_GRADIENT} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="relative mx-auto flex w-full max-w-md flex-col gap-4 pb-6">
-        {!featureOn ? (
-          <div className="rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
-            このイベントではルーレット機能がまだ有効になっていません。
-          </div>
-        ) : null}
-
         <header className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-lg font-bold text-[#111827]">{eventTitle}</h1>

@@ -341,6 +341,19 @@ export function ParticipantBingoClient({ eventId }: Props) {
     );
   }
 
+  if (!bingoFeatureEnabled) {
+    return (
+      <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
+        <main className="mx-auto flex w-full max-w-md flex-col gap-4">
+          <section className="rounded-[18px] border border-zinc-200 bg-white p-4 text-sm text-[#6B7280] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+            この機能は現在利用できません。運営が有効化するまでお待ちください。
+          </section>
+        </main>
+        <ParticipantBottomNav eventId={eventId} showRankingLink={showRankingLink} />
+      </div>
+    );
+  }
+
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4">
@@ -368,12 +381,6 @@ export function ParticipantBingoClient({ eventId }: Props) {
           </div>
           <p className="mt-3 text-xs text-[#6B7280]">次の抽選をお待ちください</p>
         </section>
-
-        {!bingoFeatureEnabled ? (
-          <section className="rounded-[18px] border border-zinc-200 bg-white p-4 text-sm text-[#6B7280] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
-            ビンゴ機能はまだ有効化されていません。
-          </section>
-        ) : null}
 
         {error ? (
           <section className="rounded-[18px] border border-red-200 bg-red-50 p-4 text-sm font-semibold text-[#EF4444]">

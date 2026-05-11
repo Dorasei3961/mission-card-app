@@ -32,7 +32,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
-import { resolveEventFeatures } from "../../lib/event-features";
+import { DEFAULT_EVENT_FEATURES, resolveEventFeatures, type EventFeatures } from "../../lib/event-features";
 import { getAdminAccess, setAdminAccess } from "../../lib/event-session";
 import {
   DEFAULT_MISSIONS_SEED,
@@ -76,7 +76,8 @@ export default function EventAdminPage({ params }: Props) {
   const [creatorNameDisplay, setCreatorNameDisplay] = useState("");
   const [joinPasswordDisplay, setJoinPasswordDisplay] = useState("");
   const [adminPinDisplay, setAdminPinDisplay] = useState("");
-  const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
+  const [eventFeatures, setEventFeatures] = useState<EventFeatures>(DEFAULT_EVENT_FEATURES);
+  const [featureUpdatingKey, setFeatureUpdatingKey] = useState<AdminFeatureKey | null>(null);
   const [createdAtDisplay, setCreatedAtDisplay] = useState("—");
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -166,7 +167,7 @@ export default function EventAdminPage({ params }: Props) {
       );
       setAdminPinDisplay(String(data.adminPin ?? "").trim());
       setRankingVisible(Boolean(data.rankingVisible));
-      setFeatureMissionEnabled(resolveEventFeatures(data.features).mission);
+      setEventFeatures(resolveEventFeatures(data.features));
       setEventStatus((data as { status?: string }).status === "closed" ? "closed" : "active");
       const code = (data.joinCode?.trim() || data.password?.trim() || "").trim();
       setJoinCode(code);
@@ -324,6 +325,31 @@ export default function EventAdminPage({ params }: Props) {
       { merge: true },
     );
     setMessage(`ランキング表示を${!rankingVisible ? "ON" : "OFF"}にしました。`);
+  };
+
+  const toggleFeature = async (featureKey: AdminFeatureKey) => {
+    if (!canManage || !eventId || featureUpdatingKey) return;
+    const nextValue = !eventFeatures[featureKey];
+    setFeatureUpdatingKey(featureKey);
+    try {
+      await setDoc(
+        doc(db, "events", eventId),
+        {
+          features: {
+            ...eventFeatures,
+            [featureKey]: nextValue,
+          },
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      setMessage(`機能設定を更新しました（${featureKey}: ${nextValue ? "ON" : "OFF"}）。`);
+    } catch (e) {
+      console.error(e);
+      setMessage("機能設定の更新に失敗しました。");
+    } finally {
+      setFeatureUpdatingKey(null);
+    }
   };
 
   const handleCreateMission = async () => {
@@ -718,6 +744,40 @@ export default function EventAdminPage({ params }: Props) {
         <section ref={missionHubRef} id="admin-feature-hub" className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
           <h2 className="text-base font-bold text-zinc-900">機能管理</h2>
           <p className="mt-1 text-xs text-zinc-600">ミッション・クイズなどのコンテンツを運営します。</p>
+          <ul className="mt-3 space-y-2">
+            {([
+              { key: "mission", label: "ミッションカード" },
+              { key: "quiz", label: "クイズ" },
+              { key: "bingo", label: "ビンゴ" },
+              { key: "roulette", label: "ルーレット" },
+            ] as const).map((feature) => {
+              const enabled = eventFeatures[feature.key];
+              const busy = featureUpdatingKey !== null;
+              return (
+                <li
+                  key={feature.key}
+                  className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-zinc-900">{feature.label}</p>
+                    <p className={`text-[11px] font-semibold ${enabled ? "text-emerald-700" : "text-zinc-500"}`}>
+                      {enabled ? "ON" : "OFF"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void toggleFeature(feature.key)}
+                    disabled={busy}
+                    className={`inline-flex h-8 min-w-[64px] items-center justify-center rounded-full px-2 text-xs font-bold text-white disabled:opacity-50 ${
+                      enabled ? "bg-emerald-500" : "bg-zinc-400"
+                    }`}
+                  >
+                    {featureUpdatingKey === feature.key ? "更新中…" : enabled ? "ON" : "OFF"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
           <ul className="mt-4 space-y-2">
             <li>
               <button
@@ -789,8 +849,12 @@ export default function EventAdminPage({ params }: Props) {
                 <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <h2 className="text-base font-bold text-zinc-900">ミッション管理</h2>
-                    <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
-                      利用中
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                      eventFeatures.mission
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                        : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                    }`}>
+                      {eventFeatures.mission ? "利用中" : "未利用"}
                     </span>
                   </div>
                   <p className="mt-2 text-xs leading-relaxed text-zinc-600">
@@ -825,7 +889,7 @@ export default function EventAdminPage({ params }: Props) {
                       aria-hidden
                     />
                   </button>
-                  {!featureMissionEnabled ? (
+                  {!eventFeatures.mission ? (
                     <p className="mt-2 text-[11px] font-semibold text-amber-700">
                       イベント設定でミッション機能がOFFの可能性があります。機能フラグを確認してください。
                     </p>
@@ -837,8 +901,12 @@ export default function EventAdminPage({ params }: Props) {
                   <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <h2 className="text-base font-bold text-zinc-900">クイズ管理</h2>
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
-                        利用中
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                        eventFeatures.quiz
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                          : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                      }`}>
+                        {eventFeatures.quiz ? "利用中" : "未利用"}
                       </span>
                     </div>
                     <div className="mt-4 grid grid-cols-3 gap-2">
@@ -872,8 +940,12 @@ export default function EventAdminPage({ params }: Props) {
                   <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <h2 className="text-base font-bold text-zinc-900">ビンゴ管理</h2>
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
-                        利用中
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                        eventFeatures.bingo
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                          : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                      }`}>
+                        {eventFeatures.bingo ? "利用中" : "未利用"}
                       </span>
                     </div>
                     <div className="mt-4 grid grid-cols-3 gap-2">
@@ -907,8 +979,12 @@ export default function EventAdminPage({ params }: Props) {
                   <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <h2 className="text-base font-bold text-zinc-900">ルーレット管理</h2>
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-200/80">
-                        利用中
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                        eventFeatures.roulette
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                          : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                      }`}>
+                        {eventFeatures.roulette ? "利用中" : "未利用"}
                       </span>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2">

@@ -262,8 +262,8 @@ export function EventQuiz({ eventId }: Props) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50/80 p-6 text-center shadow-sm">
         <HelpCircle className="mx-auto h-8 w-8 text-zinc-400" strokeWidth={1.5} aria-hidden />
-        <p className="mt-3 text-sm font-semibold text-zinc-700">クイズ機能は無効です</p>
-        <p className="mt-1 text-xs text-zinc-500">運営が有効にすると表示されます。</p>
+        <p className="mt-3 text-sm font-semibold text-zinc-700">この機能は現在利用できません。</p>
+        <p className="mt-1 text-xs text-zinc-500">運営が有効化するまでお待ちください。</p>
       </div>
     );
   }

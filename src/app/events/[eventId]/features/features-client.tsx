@@ -192,9 +192,9 @@ export function EventFeaturesClient({ eventId }: Props) {
             <li>
               <button
                 type="button"
-                disabled={!features.mission}
+                disabled={!features.mission && !fromAdmin}
                 onClick={() => {
-                  if (!features.mission) return;
+                  if (!features.mission && !fromAdmin) return;
                   if (fromAdmin) router.push(`/admin/${eventId}`);
                   else router.push(`/events/${eventId}`);
                 }}
@@ -207,7 +207,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ミッションカード</span>
                     <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200">
-                      {features.mission ? "利用中" : "無効"}
+                      {features.mission ? "利用中" : "未利用"}
                     </span>
                   </span>
                   <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
@@ -225,9 +225,9 @@ export function EventFeaturesClient({ eventId }: Props) {
             <li>
               <button
                 type="button"
-                disabled={!features.quiz}
+                disabled={!features.quiz && !fromAdmin}
                 onClick={() => {
-                  if (!features.quiz) return;
+                  if (!features.quiz && !fromAdmin) return;
                   if (fromAdmin) router.push(`/admin/${eventId}/quiz`);
                   else router.push(`/events/${eventId}/quiz`);
                 }}
@@ -240,7 +240,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">クイズ</span>
                     <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-800 ring-1 ring-emerald-200">
-                      {features.quiz ? "利用中" : "無効"}
+                      {features.quiz ? "利用中" : "未利用"}
                     </span>
                   </span>
                   <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
