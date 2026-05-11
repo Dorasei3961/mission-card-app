@@ -27,6 +27,7 @@ import {
   INITIAL_ROULETTE_ITEMS_SEED,
   normalizeRouletteSettings,
   normalizeRouletteState,
+  clockwiseEndRotationForSpin,
   clockwiseRotationToMatchStoredAngle,
   ROULETTE_SPIN_TRANSITION_EASING,
 } from "../../../lib/roulette-schema";
@@ -34,6 +35,7 @@ import {
   clearAllRouletteHistory,
   finalizeRouletteSpin,
   forceRouletteWinner,
+  predictFinalizeStoredRotationDeg,
   resetRouletteResult,
   sortRouletteItemsByOrder,
   startRouletteSpin,
@@ -73,7 +75,8 @@ export function AdminRouletteClient({ eventId }: Props) {
   >([]);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [visualRotation, setVisualRotation] = useState(0);
-  const prevStatusRef = useRef<string>("idle");
+  const rotationSyncedNonceRef = useRef<number | null>(null);
+  const [finishEaseMs, setFinishEaseMs] = useState(0);
   const [busy, setBusy] = useState(false);
   const itemsRef = useRef<RouletteItemRow[]>([]);
   itemsRef.current = sortRouletteItemsByOrder(items);
@@ -206,21 +209,41 @@ export function AdminRouletteClient({ eventId }: Props) {
   const activeSorted = useMemo(() => items.filter((i) => i.active), [items]);
 
   useEffect(() => {
-    const prev = prevStatusRef.current;
-    prevStatusRef.current = state.status;
-    if (state.status === "spinning" && prev !== "spinning") {
-      const extraSpins = 5 + (state.spinNonce % 4);
-      setVisualRotation((r) => r + extraSpins * 360);
+    if (state.status !== "idle") return;
+    setVisualRotation(0);
+    rotationSyncedNonceRef.current = null;
+    setFinishEaseMs(0);
+  }, [state.status]);
+
+  useEffect(() => {
+    if (state.status !== "spinning" || !state.startedAt) return;
+    if (rotationSyncedNonceRef.current === state.spinNonce) return;
+    const sorted = sortRouletteItemsByOrder(itemsRef.current.filter((i) => i.active));
+    const storedDeg = predictFinalizeStoredRotationDeg(eventId, state, settings, sorted);
+    if (storedDeg === null) {
+      rotationSyncedNonceRef.current = state.spinNonce;
+      return;
     }
-    if (state.status === "idle") setVisualRotation(0);
-  }, [state.status, state.spinNonce]);
+    rotationSyncedNonceRef.current = state.spinNonce;
+    setFinishEaseMs(0);
+    setVisualRotation((prev) => clockwiseEndRotationForSpin(prev, storedDeg, 5));
+  }, [eventId, state, settings]);
 
   useEffect(() => {
     if (state.status !== "finished" || typeof state.currentRotation !== "number") return;
+    if (rotationSyncedNonceRef.current === state.spinNonce) return;
+    rotationSyncedNonceRef.current = state.spinNonce;
+    setFinishEaseMs(settings.spinDurationMs);
     setVisualRotation((prev) =>
       clockwiseRotationToMatchStoredAngle(prev, state.currentRotation as number),
     );
-  }, [state.status, state.currentRotation]);
+  }, [eventId, state.status, state.currentRotation, state.spinNonce, settings.spinDurationMs]);
+
+  useEffect(() => {
+    if (finishEaseMs <= 0) return;
+    const t = window.setTimeout(() => setFinishEaseMs(0), finishEaseMs);
+    return () => clearTimeout(t);
+  }, [finishEaseMs]);
 
   useEffect(() => {
     if (state.status !== "spinning") return;
@@ -456,8 +479,8 @@ export function AdminRouletteClient({ eventId }: Props) {
               transitionMs={
                 state.status === "spinning"
                   ? settings.spinDurationMs
-                  : state.status === "finished"
-                    ? 650
+                  : finishEaseMs > 0
+                    ? finishEaseMs
                     : 0
               }
               transitionEasing={ROULETTE_SPIN_TRANSITION_EASING}

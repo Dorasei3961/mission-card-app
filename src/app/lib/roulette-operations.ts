@@ -13,6 +13,8 @@ import {
   hashSeed,
   normalizeRouletteSettings,
   normalizeRouletteState,
+  type RouletteSettings,
+  type RouletteState,
 } from "./roulette-schema";
 
 export type RouletteItemRow = {
@@ -27,6 +29,39 @@ export type RouletteItemRow = {
 /** order フィールドで並べ替え（ルーレットのセグメント順と一致させる） */
 export function sortRouletteItemsByOrder(rows: RouletteItemRow[]): RouletteItemRow[] {
   return [...rows].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "ja"));
+}
+
+/**
+ * finalizeRouletteSpin 内と同一の式で「保存される currentRotation」を算出する（演出用・書き込みなし）。
+ * 抽選ロジック・確率は finalize と完全に同じ関数を使用する。
+ */
+export function predictFinalizeStoredRotationDeg(
+  eventId: string,
+  state: RouletteState,
+  settings: RouletteSettings,
+  itemsSorted: RouletteItemRow[],
+): number | null {
+  if (state.status !== "spinning" || !state.startedAt) return null;
+  const activeSorted = itemsSorted.filter((i) => i.active);
+  const n = activeSorted.length;
+  if (n <= 0) return null;
+  const startMs = state.startedAt.toMillis();
+  const exclude = settings.preventSameConsecutive ? state.lastResultItemId : null;
+  const seed = hashSeed([eventId, startMs, state.spinNonce]);
+  const pool = activeSorted.map((i) => ({
+    id: i.id,
+    weight: i.weight,
+    active: true,
+  }));
+  const pickedId = deterministicWeightedPick(pool, seed, exclude);
+  const winnerRow = activeSorted.find((i) => i.id === pickedId) ?? activeSorted[0];
+  const winnerIndex = activeSorted.findIndex((i) => i.id === winnerRow.id);
+  const fullSpins = 5 + (state.spinNonce % 3);
+  return computeFinalRotationDeg(
+    winnerIndex >= 0 ? winnerIndex : 0,
+    n,
+    fullSpins,
+  );
 }
 
 export async function startRouletteSpin(

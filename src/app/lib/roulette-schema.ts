@@ -157,8 +157,25 @@ export function clockwiseRotationToMatchStoredAngle(
   return currentVisualDeg + delta;
 }
 
-/** メイン回転の減速カーブ（ease-out 系）。Firestore・抽選ロジックとは無関係 */
-export const ROULETTE_SPIN_TRANSITION_EASING = "cubic-bezier(0.12, 0.76, 0.24, 1)";
+/**
+ * finalize が保存する角度と同じ停止向きになり、かつ current から時計回りに最低 minFullSpins 周する累積終端角。
+ * （current + extraSpins*360 + 一周以内の差分、と整合）
+ */
+export function clockwiseEndRotationForSpin(
+  currentVisualDeg: number,
+  storedFinalDeg: number,
+  minFullSpins: number,
+): number {
+  let end = clockwiseRotationToMatchStoredAngle(currentVisualDeg, storedFinalDeg);
+  const minEnd = currentVisualDeg + minFullSpins * 360;
+  while (end < minEnd - 1e-6) {
+    end += 360;
+  }
+  return end;
+}
+
+/** メイン回転：1本の ease-out のみ（再加速に見えないよう単一 transition） */
+export const ROULETTE_SPIN_TRANSITION_EASING = "cubic-bezier(0.08, 0.85, 0.18, 1)";
 
 export function normalizeRouletteSettings(data: unknown): RouletteSettings {
   if (!data || typeof data !== "object") return { ...DEFAULT_ROULETTE_SETTINGS };

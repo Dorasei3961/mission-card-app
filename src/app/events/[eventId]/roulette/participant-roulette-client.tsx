@@ -18,11 +18,13 @@ import {
   normalizeRouletteState,
   DEFAULT_ROULETTE_SETTINGS,
   DEFAULT_ROULETTE_STATE,
+  clockwiseEndRotationForSpin,
   clockwiseRotationToMatchStoredAngle,
   ROULETTE_SPIN_TRANSITION_EASING,
 } from "../../../lib/roulette-schema";
 import {
   finalizeRouletteSpin,
+  predictFinalizeStoredRotationDeg,
   sortRouletteItemsByOrder,
   startRouletteSpin,
   type RouletteItemRow,
@@ -77,7 +79,10 @@ export function ParticipantRouletteClient({ eventId }: Props) {
   const [spinBusy, setSpinBusy] = useState(false);
   const itemsRef = useRef<RouletteItemRow[]>([]);
   const [visualRotation, setVisualRotation] = useState(0);
-  const prevStatusRef = useRef<string>("idle");
+  /** この spinNonce で既に回転角を同期済み（通常スピン or 手動確定のどちらか一度だけ） */
+  const rotationSyncedNonceRef = useRef<number | null>(null);
+  /** 手動当選など spinning を経由しない完了時の ease-out 用 */
+  const [finishEaseMs, setFinishEaseMs] = useState(0);
 
   itemsRef.current = items;
 
@@ -160,26 +165,48 @@ export function ParticipantRouletteClient({ eventId }: Props) {
 
   const activeSorted = useMemo(() => items.filter((i) => i.active), [items]);
 
-  /** 回転開始：累積角に時計回りで数周分を足す（1本の transition で減速停止まで） */
+  /** アイドル時のみリセット（transition なし）。次回スピンのために同期フラグ解除 */
   useEffect(() => {
-    const prev = prevStatusRef.current;
-    prevStatusRef.current = state.status;
-    if (state.status === "spinning" && prev !== "spinning") {
-      const extraSpins = 5 + (state.spinNonce % 4);
-      setVisualRotation((r) => r + extraSpins * 360);
-    }
-    if (state.status === "idle") {
-      setVisualRotation(0);
-    }
-  }, [state.status, state.spinNonce]);
+    if (state.status !== "idle") return;
+    setVisualRotation(0);
+    rotationSyncedNonceRef.current = null;
+    setFinishEaseMs(0);
+  }, [state.status]);
 
-  /** 結果確定：累積角を維持したまま、時計回りに最小限足して Firestore の向きと一致（逆回転しない） */
+  /**
+   * spinning に入ったら finalize と同じ抽選・角度式で終端角を1回だけ算出し、
+   * 1本の ease-out transition でそこまで回す（二段トランジションによる疑似再加速を防ぐ）
+   */
+  useEffect(() => {
+    if (state.status !== "spinning" || !state.startedAt) return;
+    if (rotationSyncedNonceRef.current === state.spinNonce) return;
+    const sorted = sortRouletteItemsByOrder(itemsRef.current.filter((i) => i.active));
+    const storedDeg = predictFinalizeStoredRotationDeg(eventId, state, settings, sorted);
+    if (storedDeg === null) {
+      rotationSyncedNonceRef.current = state.spinNonce;
+      return;
+    }
+    rotationSyncedNonceRef.current = state.spinNonce;
+    setFinishEaseMs(0);
+    setVisualRotation((prev) => clockwiseEndRotationForSpin(prev, storedDeg, 5));
+  }, [eventId, state, settings]);
+
+  /** 手動当選など spinning を経由しない finished のみ、1回だけ時計回りで補正 */
   useEffect(() => {
     if (state.status !== "finished" || typeof state.currentRotation !== "number") return;
+    if (rotationSyncedNonceRef.current === state.spinNonce) return;
+    rotationSyncedNonceRef.current = state.spinNonce;
+    setFinishEaseMs(settings.spinDurationMs);
     setVisualRotation((prev) =>
       clockwiseRotationToMatchStoredAngle(prev, state.currentRotation as number),
     );
-  }, [state.status, state.currentRotation]);
+  }, [eventId, state.status, state.currentRotation, state.spinNonce, settings.spinDurationMs]);
+
+  useEffect(() => {
+    if (finishEaseMs <= 0) return;
+    const t = window.setTimeout(() => setFinishEaseMs(0), finishEaseMs);
+    return () => clearTimeout(t);
+  }, [finishEaseMs]);
 
   useEffect(() => {
     if (state.status !== "spinning") return;
@@ -264,8 +291,8 @@ export function ParticipantRouletteClient({ eventId }: Props) {
               transitionMs={
                 state.status === "spinning"
                   ? settings.spinDurationMs
-                  : state.status === "finished"
-                    ? 650
+                  : finishEaseMs > 0
+                    ? finishEaseMs
                     : 0
               }
               transitionEasing={ROULETTE_SPIN_TRANSITION_EASING}
