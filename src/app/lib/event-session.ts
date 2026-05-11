@@ -41,6 +41,27 @@ export function clearEventSession() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
+/**
+ * イベント削除時に、該当 eventId に紐づく localStorage を掃除する。
+ * 旧キーとの互換も含めて削除する。
+ */
+export function clearEventScopedStorage(eventId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const session = getEventSession();
+    if (session?.eventId === eventId) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem("event_session");
+    }
+    localStorage.removeItem(`last_event_page_${eventId}`);
+    localStorage.removeItem(adminAuthStorageKey(eventId));
+    localStorage.removeItem(legacyAdminAccessKey(eventId));
+    localStorage.removeItem(`admin_auth_${eventId}`);
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 /** 運営PIN認証済みフラグ用（イベントごとに独立） */
 export function adminAuthStorageKey(eventId: string): string {
   return `admin_auth_${eventId}`;

@@ -12,8 +12,9 @@ import {
 } from "firebase/firestore";
 import { onAuthStateChanged as authOnAuth, signInAnonymously as authSignIn } from "firebase/auth";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
-import { getEventSession, setEventSession } from "../../../lib/event-session";
+import { clearEventScopedStorage, getEventSession, setEventSession } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { normalizeQuizFromFirestore, type QuizDoc } from "../../../lib/quiz-schema";
 import { CircleDot, Clock, HelpCircle } from "lucide-react";
@@ -21,6 +22,7 @@ import { CircleDot, Clock, HelpCircle } from "lucide-react";
 type Props = { eventId: string };
 
 export function EventQuiz({ eventId }: Props) {
+  const router = useRouter();
   const [ready, setReady] = useState(false);
   /** participants / missionProgress のドキュメントID（セッション由来のことがあります） */
   const [participantDocId, setParticipantDocId] = useState("");
@@ -55,7 +57,8 @@ export function EventQuiz({ eventId }: Props) {
 
         const eventSnap = await getDoc(doc(db, "events", eventId));
         if (!eventSnap.exists()) {
-          setError("イベントが見つかりません。");
+          clearEventScopedStorage(eventId);
+          router.replace("/");
           setCanPlay(false);
           setReady(true);
           return;
@@ -86,7 +89,16 @@ export function EventQuiz({ eventId }: Props) {
       }
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
+
+  useEffect(() => {
+    const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {
+      if (snap.exists()) return;
+      clearEventScopedStorage(eventId);
+      router.replace("/");
+    });
+    return () => unsubEvent();
+  }, [eventId, router]);
 
   useEffect(() => {
     if (!quizEnabled) {

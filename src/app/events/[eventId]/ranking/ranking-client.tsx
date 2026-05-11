@@ -3,8 +3,9 @@
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, onSnapshot, orderBy, query } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
-import { getEventSession } from "../../../lib/event-session";
+import { clearEventScopedStorage, getEventSession } from "../../../lib/event-session";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
 
@@ -21,6 +22,7 @@ type Props = {
 type RankTab = "all" | "team" | "self";
 
 export function RankingClient({ eventId }: Props) {
+  const router = useRouter();
   const [eventTitle, setEventTitle] = useState("ランキング");
   const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
@@ -32,9 +34,8 @@ export function RankingClient({ eventId }: Props) {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) {
-        setEventTitle("イベント");
-        setRankingVisible(false);
-        setLoading(false);
+        clearEventScopedStorage(eventId);
+        router.replace("/");
         return;
       }
       const data = snap.data() as {
@@ -48,7 +49,7 @@ export function RankingClient({ eventId }: Props) {
       setLoading(false);
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
 
   useEffect(() => {
     const unsubAuth = onAuthStateChanged(auth, (user) => {

@@ -11,7 +11,9 @@ import {
   type Timestamp,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
+import { clearEventScopedStorage } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
   normalizeRouletteSettings,
@@ -65,6 +67,7 @@ function medalForIndex(i: number): string {
 }
 
 export function ParticipantRouletteClient({ eventId }: Props) {
+  const router = useRouter();
   const showRankingLink = useParticipantRankingLink(eventId);
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
@@ -99,14 +102,18 @@ export function ParticipantRouletteClient({ eventId }: Props) {
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        clearEventScopedStorage(eventId);
+        router.replace("/");
+        return;
+      }
       const data = snap.data() as { title?: string; status?: string; features?: unknown };
       setEventTitle(String(data.title ?? "イベント"));
       setEventActive(data.status !== "closed");
       setFeatureOn(resolveEventFeatures(data.features).roulette);
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId, "rouletteSettings", "main"), (snap) => {

@@ -14,8 +14,9 @@ import {
 } from "firebase/firestore";
 import { Check, Crown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth, db } from "../../../lib/firebase";
-import { getEventSession, setEventSession } from "../../../lib/event-session";
+import { clearEventScopedStorage, getEventSession, setEventSession } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
   buildBingoLines,
@@ -90,6 +91,7 @@ function evaluateCard(numbers: BingoCellValue[], gridSize: 3 | 5, drawnNumbers: 
 }
 
 export function ParticipantBingoClient({ eventId }: Props) {
+  const router = useRouter();
   const showRankingLink = useParticipantRankingLink(eventId);
   const [ready, setReady] = useState(false);
   const [eventTitle, setEventTitle] = useState("イベント");
@@ -119,7 +121,8 @@ export function ParticipantBingoClient({ eventId }: Props) {
         const evRef = doc(db, "events", eventId);
         const evSnap = await getDoc(evRef);
         if (!evSnap.exists()) {
-          setError("イベントが見つかりません。");
+          clearEventScopedStorage(eventId);
+          router.replace("/");
           setReady(true);
           return;
         }
@@ -160,19 +163,23 @@ export function ParticipantBingoClient({ eventId }: Props) {
       }
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
 
   useEffect(() => {
     if (!ready) return;
     const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {
-      if (!snap.exists()) return;
+      if (!snap.exists()) {
+        clearEventScopedStorage(eventId);
+        router.replace("/");
+        return;
+      }
       const ev = snap.data() as { title?: string; status?: string; features?: unknown };
       setEventTitle(String(ev.title ?? "イベント"));
       setEventClosed(ev.status === "closed");
       setBingoFeatureEnabled(resolveEventFeatures(ev.features).bingo);
     });
     return () => unsubEvent();
-  }, [eventId, ready]);
+  }, [eventId, ready, router]);
 
   useEffect(() => {
     if (!ready) return;

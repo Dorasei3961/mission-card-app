@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronRight, Target } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
@@ -20,7 +21,7 @@ import {
   type MissionFields,
   normalizeMissionFromFirestore,
 } from "../../lib/mission-schema";
-import { getEventSession, setEventSession } from "../../lib/event-session";
+import { clearEventScopedStorage, getEventSession, setEventSession } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../lib/participant-last-page";
@@ -67,6 +68,8 @@ type Props = {
 };
 
 export function EventMissions({ eventId }: Props) {
+  const router = useRouter();
+  const [redirected, setRedirected] = useState(false);
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<MissionFields[]>(DEFAULT_MISSIONS_SEED);
   const [checkedMissionIds, setCheckedMissionIds] = useState<number[]>([]);
@@ -108,6 +111,11 @@ export function EventMissions({ eventId }: Props) {
   useEffect(() => {
     const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) {
+        if (!redirected) {
+          setRedirected(true);
+          clearEventScopedStorage(eventId);
+          router.replace("/");
+        }
         return;
       }
       const data = snap.data() as {
@@ -123,7 +131,7 @@ export function EventMissions({ eventId }: Props) {
     });
 
     return () => unsubEvent();
-  }, [eventId]);
+  }, [eventId, redirected, router]);
 
   useEffect(() => {
     recordParticipantMainPage(eventId, `/events/${eventId}`);
@@ -147,7 +155,8 @@ export function EventMissions({ eventId }: Props) {
         const eventRef = doc(db, "events", eventId);
         const eventSnap = await getDoc(eventRef);
         if (!eventSnap.exists()) {
-          setErrorMessage("イベントが見つかりません。");
+          clearEventScopedStorage(eventId);
+          router.replace("/");
           setCanUseMissions(false);
           setIsReady(true);
           return;
@@ -262,7 +271,7 @@ export function EventMissions({ eventId }: Props) {
     });
 
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
 
   useEffect(() => {
     if (!userId || !canUseMissions) {

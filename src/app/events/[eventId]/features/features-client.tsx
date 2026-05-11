@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, onSnapshot } from "firebase/firestore";
-import { useEffect, useMemo, useState } from "react";
-import { HelpCircle, LayoutGrid, Sparkles, Target } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, HelpCircle, LayoutGrid, Sparkles, Target } from "lucide-react";
 import { auth, db } from "../../../lib/firebase";
-import { getEventSession } from "../../../lib/event-session";
+import { clearEventScopedStorage, getEventSession } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../../lib/participant-last-page";
@@ -25,6 +25,7 @@ function readFromAdminFromUrl(): boolean {
 
 export function EventFeaturesClient({ eventId }: Props) {
   const router = useRouter();
+  const redirectedRef = useRef(false);
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
   const [features, setFeatures] = useState(resolveEventFeatures(undefined));
@@ -46,9 +47,11 @@ export function EventFeaturesClient({ eventId }: Props) {
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) {
-        setEventTitle("イベント");
-        setFeatures(resolveEventFeatures(undefined));
-        setEventActive(true);
+        if (!redirectedRef.current) {
+          redirectedRef.current = true;
+          clearEventScopedStorage(eventId);
+          router.replace("/");
+        }
         return;
       }
       const data = snap.data() as {
@@ -61,7 +64,7 @@ export function EventFeaturesClient({ eventId }: Props) {
       setEventActive(data.status !== "closed");
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, router]);
 
   useEffect(() => {
     const coll = collection(db, "events", eventId, "quizzes");
@@ -136,10 +139,18 @@ export function EventFeaturesClient({ eventId }: Props) {
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${fromAdmin ? "pb-10" : PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
       <main className="mx-auto flex w-full max-w-md flex-col gap-4 pb-2">
         <header className="rounded-[18px] border border-white/80 bg-white/95 p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-bold text-[#111827]">{eventTitle}</h1>
+          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="inline-flex h-10 items-center gap-1 rounded-[12px] bg-white px-3 text-xs font-bold text-[#111827] shadow-sm ring-1 ring-zinc-100 touch-manipulation"
+            >
+              <ChevronLeft className="h-4 w-4" strokeWidth={2.25} aria-hidden />
+              TOPへ戻る
+            </button>
+            <h1 className="truncate text-center text-[19px] font-bold text-[#111827]">{eventTitle}</h1>
             <span
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+              className={`justify-self-end rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
                 eventActive
                   ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200"
                   : "bg-zinc-100 text-[#6B7280] ring-1 ring-zinc-200"
