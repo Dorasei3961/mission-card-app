@@ -33,7 +33,7 @@ export function AdminQuizClient({ eventId }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#FFF7E8] to-[#FFE9E5] px-4 pb-28 pt-4">
+    <div className="min-h-screen bg-gradient-to-b from-[#FFF7E8] to-[#FFE9E5] px-4 pb-32 pt-4">
       <header className="mx-auto mb-4 flex max-w-md items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
         <Link
@@ -54,16 +54,16 @@ export function AdminQuizClient({ eventId }: Props) {
           className="inline-flex h-10 shrink-0 items-center gap-1 rounded-[14px] border border-[#7C3AED] bg-white px-3 text-xs font-bold text-[#7C3AED] touch-manipulation"
         >
           <HelpCircle className="h-4 w-4" strokeWidth={2} aria-hidden />
-          使い方ガイド
+          ？ 使い方ガイド
         </button>
       </header>
       {showGuide ? (
         <section className="mx-auto mb-4 max-w-md rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-          <p className="text-sm font-bold text-zinc-900">使い方ガイド</p>
-          <ul className="mt-2 space-y-1 text-xs text-zinc-600">
-            <li>問題一覧: 問題を追加・編集・出題します。</li>
-            <li>出題設定・進行: ライブ出題をコントロールします。</li>
-            <li>結果一覧: 問題別・参加者別の回答結果を確認できます。</li>
+          <p className="text-sm font-bold text-[#111827]">使い方ガイド</p>
+          <ul className="mt-2 space-y-1 text-xs text-[#6B7280]">
+            <li>「問題作成」タブで問題を追加・編集します。</li>
+            <li>「クイズ進行」タブで手動または自動の進行を行います。</li>
+            <li>「結果一覧」タブで回答結果を確認します。</li>
           </ul>
         </section>
       ) : null}
