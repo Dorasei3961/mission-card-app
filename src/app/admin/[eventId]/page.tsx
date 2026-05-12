@@ -16,16 +16,20 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
+import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
   Bell,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  History,
   LayoutGrid,
   Link2,
   ListChecks,
   QrCode,
   Settings,
+  Sparkles,
   Trophy,
   Users,
   X,
@@ -46,6 +50,50 @@ type AdminMission = MissionFields & { docId: string };
 type ParticipantSummary = { uid: string; name: string; totalPoints: number; completedCount: number };
 type Props = { params: Promise<{ eventId: string }> };
 type AdminFeatureKey = "mission" | "quiz" | "bingo" | "roulette";
+
+/** 機能管理：右上の ON/OFF トグル */
+function FeatureOnOffToggle({
+  on,
+  disabled,
+  onToggle,
+}: {
+  on: boolean;
+  disabled: boolean;
+  onToggle: () => void | Promise<void>;
+}) {
+  return (
+    <div className="flex shrink-0 flex-col items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        disabled={disabled}
+        onClick={() => void onToggle()}
+        className={`relative h-[30px] w-[52px] shrink-0 rounded-full transition-colors ${
+          on ? "bg-emerald-500" : "bg-zinc-400"
+        } disabled:pointer-events-none disabled:opacity-50`}
+      >
+        <span
+          className={`absolute top-[3px] left-[3px] h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+            on ? "translate-x-[22px]" : "translate-x-0"
+          }`}
+        />
+      </button>
+      <span className="text-[9px] font-bold leading-none text-zinc-500">{on ? "ON" : "OFF"}</span>
+    </div>
+  );
+}
+
+/** 展開時の概要カード（紫アイコン・白背景・#E9D5FF 枠） */
+function FeatureStatBox({ Icon, label, value }: { Icon: LucideIcon; label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 flex-col items-center rounded-[14px] border border-[#E9D5FF] bg-white px-2 py-3 text-center shadow-sm">
+      <Icon className="h-5 w-5 shrink-0 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+      <p className="mt-2 text-[10px] font-semibold text-zinc-500">{label}</p>
+      <p className="mt-1 w-full truncate text-sm font-bold tabular-nums text-zinc-900">{value}</p>
+    </div>
+  );
+}
 
 const DEFAULT_CATEGORY_COLOR = "custom";
 
@@ -79,6 +127,8 @@ export default function EventAdminPage({ params }: Props) {
   const [adminPinDisplay, setAdminPinDisplay] = useState("");
   const [eventFeatures, setEventFeatures] = useState<EventFeatures>(DEFAULT_EVENT_FEATURES);
   const [featureUpdatingKey, setFeatureUpdatingKey] = useState<AdminFeatureKey | null>(null);
+  /** 機能管理アコーディオン（1つだけ開く。null はすべて閉じ） */
+  const [featureAccordionOpen, setFeatureAccordionOpen] = useState<AdminFeatureKey | null>(null);
   const [rankingToggleBusy, setRankingToggleBusy] = useState(false);
   const [closeEventBusy, setCloseEventBusy] = useState(false);
   const [missionCreateBusy, setMissionCreateBusy] = useState(false);
@@ -341,15 +391,20 @@ export default function EventAdminPage({ params }: Props) {
 
   const toggleFeature = async (featureKey: AdminFeatureKey) => {
     if (!canManage || !eventId || featureUpdatingKey) return;
-    const nextValue = !eventFeatures[featureKey];
+    const prev = { ...eventFeatures };
+    const nextValue = !prev[featureKey];
+    const nextFeatures = { ...prev, [featureKey]: nextValue };
     setFeatureUpdatingKey(featureKey);
+    setEventFeatures(nextFeatures);
     try {
       await setDoc(
         doc(db, "events", eventId),
         {
           features: {
-            ...eventFeatures,
-            [featureKey]: nextValue,
+            mission: nextFeatures.mission,
+            quiz: nextFeatures.quiz,
+            bingo: nextFeatures.bingo,
+            roulette: nextFeatures.roulette,
           },
           updatedAt: serverTimestamp(),
         },
@@ -357,7 +412,8 @@ export default function EventAdminPage({ params }: Props) {
       );
       setMessage(`機能設定を更新しました（${featureKey}: ${nextValue ? "ON" : "OFF"}）。`);
     } catch (e) {
-      console.error(e);
+      console.error("[admin] toggleFeature failed", { eventId, featureKey, nextValue, err: e });
+      setEventFeatures(prev);
       setMessage("保存に失敗しました。再読み込み後にもう一度お試しください。");
     } finally {
       setFeatureUpdatingKey(null);
@@ -596,10 +652,21 @@ export default function EventAdminPage({ params }: Props) {
   };
 
   const openMissionAdminPanel = () => {
+    setFeatureAccordionOpen("mission");
     setMissionEditorOpen(true);
     requestAnimationFrame(() => {
       missionEditorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+  };
+
+  const rouletteLatestLabel = useMemo(() => {
+    const t = String(rouletteStats.latestResult ?? "").trim();
+    if (!t || t === "未実行") return "なし";
+    return t;
+  }, [rouletteStats.latestResult]);
+
+  const toggleFeatureAccordion = (key: AdminFeatureKey) => {
+    setFeatureAccordionOpen((cur) => (cur === key ? null : key));
   };
 
   const scrollToDetailSettings = () => {
@@ -767,187 +834,263 @@ export default function EventAdminPage({ params }: Props) {
           <h2 className="text-base font-bold text-zinc-900">機能管理</h2>
           <p className="mt-1 text-xs text-zinc-600">ミッション・クイズなどのコンテンツを運営します。</p>
 
-          <div className="mt-4 space-y-4">
-            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm">
-              <p className="text-sm font-bold text-zinc-900">ミッションカード</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                状態：
-                <span
-                  className={`font-semibold ${eventFeatures.mission ? "text-emerald-700" : "text-zinc-500"}`}
-                >
-                  {eventFeatures.mission ? "ON" : "OFF"}
-                </span>
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">ミッション数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{missionStats.activeCount}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">達成数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{missionStats.achievementSum}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">達成率</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{missionStats.achievementRate}%</p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <div className="mt-4 space-y-3">
+            {/* ミッションカード */}
+            <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-zinc-50/90 shadow-sm">
+              <div className="flex items-center gap-2 px-2 py-2.5">
                 <button
                   type="button"
-                  onClick={() => void toggleFeature("mission")}
-                  disabled={featureUpdatingKey !== null}
-                  className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl px-3 text-xs font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation ${
-                    eventFeatures.mission ? "bg-emerald-500" : "bg-zinc-400"
-                  }`}
+                  onClick={() => toggleFeatureAccordion("mission")}
+                  className="min-w-0 flex-1 rounded-lg py-1 pl-1 text-left touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
                 >
-                  {featureUpdatingKey === "mission" ? "更新中…" : eventFeatures.mission ? "ON" : "OFF"}
+                  <p className="text-sm font-bold text-zinc-900">ミッションカード</p>
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                      eventFeatures.mission
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                        : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                    }`}
+                  >
+                    {eventFeatures.mission ? "利用中" : "未利用"}
+                  </span>
                 </button>
+                <FeatureOnOffToggle
+                  on={eventFeatures.mission}
+                  disabled={!canManage || featureUpdatingKey !== null}
+                  onToggle={() => void toggleFeature("mission")}
+                />
                 <button
                   type="button"
-                  onClick={() => openMissionAdminPanel()}
-                  className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-xl bg-[#7C3AED] px-3 text-xs font-bold text-white shadow-sm touch-manipulation"
+                  onClick={() => toggleFeatureAccordion("mission")}
+                  className="shrink-0 rounded-lg p-2 text-zinc-500 touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
+                  aria-label={featureAccordionOpen === "mission" ? "詳細を閉じる" : "詳細を開く"}
                 >
-                  管理画面を開く
-                  <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
+                  <ChevronDown
+                    className={`h-5 w-5 transition-transform duration-200 ${
+                      featureAccordionOpen === "mission" ? "rotate-180" : ""
+                    }`}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
                 </button>
               </div>
-              {!eventFeatures.mission ? (
-                <p className="mt-2 text-[11px] font-semibold text-amber-700">
-                  参加者向けに無効化されています。ONにするとミッションカードが利用できます。
-                </p>
+              {featureAccordionOpen === "mission" ? (
+                <div className="border-t border-zinc-200/80 bg-white px-3 pb-4 pt-3">
+                  <p className="text-xs leading-relaxed text-zinc-600">
+                    ミッションカードの作成・編集・達成状況を確認できます。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <FeatureStatBox
+                      Icon={ListChecks}
+                      label="ミッション数"
+                      value={`${missionStats.activeCount}個`}
+                    />
+                    <FeatureStatBox
+                      Icon={CheckCircle2}
+                      label="達成数"
+                      value={`${missionStats.achievementSum}件`}
+                    />
+                    <FeatureStatBox
+                      Icon={BarChart3}
+                      label="達成率"
+                      value={`${missionStats.achievementRate}%`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openMissionAdminPanel()}
+                    className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-1 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm touch-manipulation"
+                  >
+                    ミッション管理画面を開く
+                    <ChevronRight className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
+                  </button>
+                  {!eventFeatures.mission ? (
+                    <p className="mt-2 text-[11px] font-semibold text-amber-700">
+                      参加者向けはOFFです。準備ができたらトグルでONにしてください。
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </div>
 
-            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm">
-              <p className="text-sm font-bold text-zinc-900">クイズ</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                状態：
-                <span className={`font-semibold ${eventFeatures.quiz ? "text-emerald-700" : "text-zinc-500"}`}>
-                  {eventFeatures.quiz ? "ON" : "OFF"}
-                </span>
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">問題数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{quizStats.questionCount}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">回答数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{quizStats.answerCount}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">正解率</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{quizCorrectRate}%</p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {/* クイズ */}
+            <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-zinc-50/90 shadow-sm">
+              <div className="flex items-center gap-2 px-2 py-2.5">
                 <button
                   type="button"
-                  onClick={() => void toggleFeature("quiz")}
-                  disabled={featureUpdatingKey !== null}
-                  className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl px-3 text-xs font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation ${
-                    eventFeatures.quiz ? "bg-emerald-500" : "bg-zinc-400"
-                  }`}
+                  onClick={() => toggleFeatureAccordion("quiz")}
+                  className="min-w-0 flex-1 rounded-lg py-1 pl-1 text-left touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
                 >
-                  {featureUpdatingKey === "quiz" ? "更新中…" : eventFeatures.quiz ? "ON" : "OFF"}
+                  <p className="text-sm font-bold text-zinc-900">クイズ</p>
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                      eventFeatures.quiz
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                        : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                    }`}
+                  >
+                    {eventFeatures.quiz ? "利用中" : "未利用"}
+                  </span>
                 </button>
-                <Link
-                  href={`/admin/${eventId}/quiz`}
-                  className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-xl bg-[#7C3AED] px-3 text-xs font-bold text-white shadow-sm touch-manipulation"
+                <FeatureOnOffToggle
+                  on={eventFeatures.quiz}
+                  disabled={!canManage || featureUpdatingKey !== null}
+                  onToggle={() => void toggleFeature("quiz")}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleFeatureAccordion("quiz")}
+                  className="shrink-0 rounded-lg p-2 text-zinc-500 touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
+                  aria-label={featureAccordionOpen === "quiz" ? "詳細を閉じる" : "詳細を開く"}
                 >
-                  管理画面を開く
-                  <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                </Link>
+                  <ChevronDown
+                    className={`h-5 w-5 transition-transform duration-200 ${
+                      featureAccordionOpen === "quiz" ? "rotate-180" : ""
+                    }`}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                </button>
               </div>
+              {featureAccordionOpen === "quiz" ? (
+                <div className="border-t border-zinc-200/80 bg-white px-3 pb-4 pt-3">
+                  <p className="text-xs leading-relaxed text-zinc-600">
+                    クイズ作成・出題・結果確認ができます。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <FeatureStatBox Icon={ListChecks} label="問題数" value={`${quizStats.questionCount}問`} />
+                    <FeatureStatBox Icon={CheckCircle2} label="回答数" value={`${quizStats.answerCount}件`} />
+                    <FeatureStatBox Icon={BarChart3} label="正解率" value={`${quizCorrectRate}%`} />
+                  </div>
+                  <Link
+                    href={`/admin/${eventId}/quiz`}
+                    className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-1 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm touch-manipulation"
+                  >
+                    クイズ管理画面を開く
+                    <ChevronRight className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
+                  </Link>
+                </div>
+              ) : null}
             </div>
 
-            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm">
-              <p className="text-sm font-bold text-zinc-900">ビンゴ</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                状態：
-                <span className={`font-semibold ${eventFeatures.bingo ? "text-emerald-700" : "text-zinc-500"}`}>
-                  {eventFeatures.bingo ? "ON" : "OFF"}
-                </span>
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">参加者数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{bingoStats.participantCount}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">リーチ人数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{bingoStats.reachCount}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">ビンゴ人数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{bingoStats.bingoCount}</p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {/* ビンゴ */}
+            <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-zinc-50/90 shadow-sm">
+              <div className="flex items-center gap-2 px-2 py-2.5">
                 <button
                   type="button"
-                  onClick={() => void toggleFeature("bingo")}
-                  disabled={featureUpdatingKey !== null}
-                  className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl px-3 text-xs font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation ${
-                    eventFeatures.bingo ? "bg-emerald-500" : "bg-zinc-400"
-                  }`}
+                  onClick={() => toggleFeatureAccordion("bingo")}
+                  className="min-w-0 flex-1 rounded-lg py-1 pl-1 text-left touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
                 >
-                  {featureUpdatingKey === "bingo" ? "更新中…" : eventFeatures.bingo ? "ON" : "OFF"}
+                  <p className="text-sm font-bold text-zinc-900">ビンゴ</p>
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                      eventFeatures.bingo
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                        : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                    }`}
+                  >
+                    {eventFeatures.bingo ? "利用中" : "未利用"}
+                  </span>
                 </button>
-                <Link
-                  href={`/admin/${eventId}/bingo`}
-                  className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-xl bg-[#7C3AED] px-3 text-xs font-bold text-white shadow-sm touch-manipulation"
+                <FeatureOnOffToggle
+                  on={eventFeatures.bingo}
+                  disabled={!canManage || featureUpdatingKey !== null}
+                  onToggle={() => void toggleFeature("bingo")}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleFeatureAccordion("bingo")}
+                  className="shrink-0 rounded-lg p-2 text-zinc-500 touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
+                  aria-label={featureAccordionOpen === "bingo" ? "詳細を閉じる" : "詳細を開く"}
                 >
-                  管理画面を開く
-                  <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                </Link>
+                  <ChevronDown
+                    className={`h-5 w-5 transition-transform duration-200 ${
+                      featureAccordionOpen === "bingo" ? "rotate-180" : ""
+                    }`}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                </button>
               </div>
+              {featureAccordionOpen === "bingo" ? (
+                <div className="border-t border-zinc-200/80 bg-white px-3 pb-4 pt-3">
+                  <p className="text-xs leading-relaxed text-zinc-600">
+                    ビンゴカード・抽選・達成状況を確認できます。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <FeatureStatBox Icon={Users} label="参加者数" value={`${bingoStats.participantCount}人`} />
+                    <FeatureStatBox Icon={Bell} label="リーチ人数" value={`${bingoStats.reachCount}人`} />
+                    <FeatureStatBox Icon={Trophy} label="ビンゴ人数" value={`${bingoStats.bingoCount}人`} />
+                  </div>
+                  <Link
+                    href={`/admin/${eventId}/bingo`}
+                    className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-1 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm touch-manipulation"
+                  >
+                    ビンゴ管理画面を開く
+                    <ChevronRight className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
+                  </Link>
+                </div>
+              ) : null}
             </div>
 
-            <div className="rounded-xl border border-zinc-100 bg-zinc-50/80 p-4 shadow-sm">
-              <p className="text-sm font-bold text-zinc-900">ルーレット</p>
-              <p className="mt-1 text-xs text-zinc-600">
-                状態：
-                <span
-                  className={`font-semibold ${eventFeatures.roulette ? "text-emerald-700" : "text-zinc-500"}`}
-                >
-                  {eventFeatures.roulette ? "ON" : "OFF"}
-                </span>
-              </p>
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">候補数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{rouletteStats.candidateCount}</p>
-                </div>
-                <div className="rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">実行回数</p>
-                  <p className="text-sm font-bold tabular-nums text-zinc-900">{rouletteStats.executionCount}</p>
-                </div>
-                <div className="min-w-0 rounded-lg bg-white px-2 py-2 text-center shadow-sm ring-1 ring-violet-100/80">
-                  <p className="text-[10px] font-semibold text-zinc-500">最新結果</p>
-                  <p className="truncate text-sm font-bold text-zinc-900">{rouletteStats.latestResult}</p>
-                </div>
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {/* ルーレット */}
+            <div className="overflow-hidden rounded-[14px] border border-zinc-200 bg-zinc-50/90 shadow-sm">
+              <div className="flex items-center gap-2 px-2 py-2.5">
                 <button
                   type="button"
-                  onClick={() => void toggleFeature("roulette")}
-                  disabled={featureUpdatingKey !== null}
-                  className={`inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl px-3 text-xs font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation ${
-                    eventFeatures.roulette ? "bg-emerald-500" : "bg-zinc-400"
-                  }`}
+                  onClick={() => toggleFeatureAccordion("roulette")}
+                  className="min-w-0 flex-1 rounded-lg py-1 pl-1 text-left touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
                 >
-                  {featureUpdatingKey === "roulette" ? "更新中…" : eventFeatures.roulette ? "ON" : "OFF"}
+                  <p className="text-sm font-bold text-zinc-900">ルーレット</p>
+                  <span
+                    className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${
+                      eventFeatures.roulette
+                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200/80"
+                        : "bg-zinc-100 text-zinc-600 ring-zinc-200"
+                    }`}
+                  >
+                    {eventFeatures.roulette ? "利用中" : "未利用"}
+                  </span>
                 </button>
-                <Link
-                  href={`/admin/${eventId}/roulette`}
-                  className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1 rounded-xl bg-[#7C3AED] px-3 text-xs font-bold text-white shadow-sm touch-manipulation"
+                <FeatureOnOffToggle
+                  on={eventFeatures.roulette}
+                  disabled={!canManage || featureUpdatingKey !== null}
+                  onToggle={() => void toggleFeature("roulette")}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleFeatureAccordion("roulette")}
+                  className="shrink-0 rounded-lg p-2 text-zinc-500 touch-manipulation outline-none ring-violet-500/30 focus-visible:ring-2"
+                  aria-label={featureAccordionOpen === "roulette" ? "詳細を閉じる" : "詳細を開く"}
                 >
-                  管理画面を開く
-                  <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden />
-                </Link>
+                  <ChevronDown
+                    className={`h-5 w-5 transition-transform duration-200 ${
+                      featureAccordionOpen === "roulette" ? "rotate-180" : ""
+                    }`}
+                    strokeWidth={2}
+                    aria-hidden
+                  />
+                </button>
               </div>
+              {featureAccordionOpen === "roulette" ? (
+                <div className="border-t border-zinc-200/80 bg-white px-3 pb-4 pt-3">
+                  <p className="text-xs leading-relaxed text-zinc-600">
+                    候補編集・抽選・履歴確認ができます。
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <FeatureStatBox Icon={ListChecks} label="候補数" value={`${rouletteStats.candidateCount}個`} />
+                    <FeatureStatBox Icon={History} label="実行回数" value={`${rouletteStats.executionCount}回`} />
+                    <FeatureStatBox Icon={Sparkles} label="最新結果" value={rouletteLatestLabel} />
+                  </div>
+                  <Link
+                    href={`/admin/${eventId}/roulette`}
+                    className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-1 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm touch-manipulation"
+                  >
+                    ルーレット管理画面を開く
+                    <ChevronRight className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
+                  </Link>
+                </div>
+              ) : null}
             </div>
           </div>
 
