@@ -7,7 +7,6 @@ import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
   Timestamp,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -42,7 +41,6 @@ import { clearEventScopedStorage, getAdminAccess, setAdminAccess } from "../../l
 import {
   DEFAULT_MISSIONS_SEED,
   type MissionFields,
-  type MissionKind,
   normalizeMissionFromFirestore,
 } from "../../lib/mission-schema";
 
@@ -95,23 +93,12 @@ function FeatureStatBox({ Icon, label, value }: { Icon: LucideIcon; label: strin
   );
 }
 
-const DEFAULT_CATEGORY_COLOR = "custom";
-
 export default function EventAdminPage({ params }: Props) {
   const router = useRouter();
-  const showMissionCategoryUi = false;
   const [eventId, setEventId] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<AdminMission[]>([]);
   const [participants, setParticipants] = useState<ParticipantSummary[]>([]);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
-  const [missionKind, setMissionKind] = useState<MissionKind>("checkbox");
-  const [points, setPoints] = useState("10");
-  const [pointPerUnit, setPointPerUnit] = useState("50");
-  const [order, setOrder] = useState("");
-  const [isActiveNew, setIsActiveNew] = useState(true);
   const [rankingVisible, setRankingVisible] = useState(false);
   const [message, setMessage] = useState("");
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
@@ -132,11 +119,9 @@ export default function EventAdminPage({ params }: Props) {
   const [featureAccordionOpen, setFeatureAccordionOpen] = useState<AdminFeatureKey | null>(null);
   const [rankingToggleBusy, setRankingToggleBusy] = useState(false);
   const [closeEventBusy, setCloseEventBusy] = useState(false);
-  const [missionCreateBusy, setMissionCreateBusy] = useState(false);
   const [createdAtDisplay, setCreatedAtDisplay] = useState("—");
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [missionEditorOpen, setMissionEditorOpen] = useState(false);
   const [quizStats, setQuizStats] = useState({ questionCount: 0, answerCount: 0, correctCount: 0 });
   const [bingoStats, setBingoStats] = useState({ participantCount: 0, reachCount: 0, bingoCount: 0 });
   const [rouletteStats, setRouletteStats] = useState({
@@ -146,7 +131,6 @@ export default function EventAdminPage({ params }: Props) {
   });
 
   const missionHubRef = useRef<HTMLDivElement>(null);
-  const missionEditorPanelRef = useRef<HTMLDivElement>(null);
   const detailSettingsRef = useRef<HTMLDivElement>(null);
 
   /** Firebase のイベント作成者でも、運営UIは管理PIN認証後のみ（owner バイパスなし） */
@@ -421,134 +405,6 @@ export default function EventAdminPage({ params }: Props) {
     }
   };
 
-  const handleCreateMission = async () => {
-    if (!canEdit || missionCreateBusy) return;
-    const parsedPoints = Number(points);
-    const parsedPerUnit = Number(pointPerUnit);
-    const parsedOrder = Number(order);
-    if (!title.trim()) return setMessage("タイトルは必須です。");
-    if (order && (Number.isNaN(parsedOrder) || parsedOrder < 0)) {
-      return setMessage("並び順には0以上の数値を入力してください。");
-    }
-    if (missionKind === "checkbox") {
-      if (Number.isNaN(parsedPoints) || parsedPoints < 0) {
-        return setMessage("チェック型では固定ポイントに0以上の数値を入力してください。");
-      }
-    } else if (Number.isNaN(parsedPerUnit) || parsedPerUnit <= 0) {
-      return setMessage("数量型では「1あたりのポイント」に正の数値を入力してください。");
-    }
-    const id = Date.now();
-    const nextOrder =
-      order.trim().length > 0
-        ? Math.floor(parsedOrder)
-        : missions.length > 0
-          ? Math.max(...missions.map((m) => m.order)) + 1
-          : 1;
-    const payload: Record<string, unknown> = {
-      id,
-      order: nextOrder,
-      title: title.trim(),
-      description: description.trim(),
-      type: missionKind,
-      category: category.trim(),
-      categoryColor: DEFAULT_CATEGORY_COLOR,
-      isActive: isActiveNew,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    };
-    if (missionKind === "checkbox") {
-      payload.points = parsedPoints;
-      payload.pointPerUnit = 0;
-      payload.unitLabel = "";
-    } else {
-      payload.points = 0;
-      payload.pointPerUnit = parsedPerUnit;
-      payload.unitLabel = "";
-    }
-    setMissionCreateBusy(true);
-    try {
-      await setDoc(doc(db, "events", eventId, "missions", String(id)), {
-        ...payload,
-        eventId,
-      });
-      setTitle("");
-      setDescription("");
-      setCategory("");
-      setMissionKind("checkbox");
-      setPoints("10");
-      setPointPerUnit("50");
-      setOrder("");
-      setIsActiveNew(true);
-      setMessage("保存しました。");
-      await loadMissions();
-    } catch (e) {
-      console.error("[admin] handleCreateMission", e);
-      setMessage("保存に失敗しました。再読み込み後にもう一度お試しください。");
-    } finally {
-      setMissionCreateBusy(false);
-    }
-  };
-
-  const handleUpdateMission = async (mission: AdminMission) => {
-    if (!canEdit) return;
-    if (!mission.title.trim()) return setMessage("タイトルは必須です。");
-    if (mission.type === "number" && mission.pointPerUnit <= 0) {
-      return setMessage("数量型では「1あたりのポイント」を正の数値にしてください。");
-    }
-    if (mission.type === "checkbox" && mission.points < 0) {
-      return setMessage("チェック型の固定ポイントは0以上にしてください。");
-    }
-    const payload: Record<string, unknown> = {
-      id: mission.id,
-      order: mission.order,
-      title: mission.title.trim(),
-      description: mission.description.trim(),
-      type: mission.type,
-      category: mission.category.trim(),
-      isActive: mission.isActive,
-      updatedAt: serverTimestamp(),
-    };
-    if (mission.type === "checkbox") {
-      payload.points = mission.points;
-      payload.pointPerUnit = 0;
-      payload.unitLabel = "";
-    } else {
-      payload.points = 0;
-      payload.pointPerUnit = mission.pointPerUnit;
-    }
-    await setDoc(doc(db, "events", eventId, "missions", mission.docId), payload, { merge: true });
-    setMessage("更新しました。");
-    await loadMissions();
-  };
-
-  const handleDeleteMission = async (docId: string) => {
-    if (!canEdit) return;
-    await deleteDoc(doc(db, "events", eventId, "missions", docId));
-    setMessage("削除しました。");
-    await loadMissions();
-  };
-
-  const moveMission = async (docId: string, direction: "up" | "down") => {
-    if (!canEdit) return;
-    const sorted = [...missions].sort((a, b) => a.order - b.order || a.id - b.id);
-    const index = sorted.findIndex((m) => m.docId === docId);
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (index < 0 || targetIndex < 0 || targetIndex >= sorted.length) return;
-    [sorted[index], sorted[targetIndex]] = [sorted[targetIndex], sorted[index]];
-    const next = sorted.map((m, i) => ({ ...m, order: i + 1 }));
-    setMissions(next);
-    await Promise.all(
-      next.map((m, i) =>
-        setDoc(
-          doc(db, "events", eventId, "missions", m.docId),
-          { order: i + 1, updatedAt: serverTimestamp() },
-          { merge: true },
-        ),
-      ),
-    );
-    setMessage("並び順を更新しました。");
-  };
-
   const verifyGatePin = async () => {
     const entered = filterAdminPinInput(gatePinInput);
     if (!isValidFourDigitAdminPin(entered)) {
@@ -650,14 +506,6 @@ export default function EventAdminPage({ params }: Props) {
 
   const scrollToMissionHub = () => {
     missionHubRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const openMissionAdminPanel = () => {
-    setFeatureAccordionOpen("mission");
-    setMissionEditorOpen(true);
-    requestAnimationFrame(() => {
-      missionEditorPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
   };
 
   const rouletteLatestLabel = useMemo(() => {
@@ -852,7 +700,7 @@ export default function EventAdminPage({ params }: Props) {
                         : "bg-zinc-100 text-zinc-600 ring-zinc-200"
                     }`}
                   >
-                    {eventFeatures.mission ? "利用中" : "未利用"}
+                    {eventFeatures.mission ? "ON" : "OFF"}
                   </span>
                 </button>
                 <FeatureOnOffToggle
@@ -897,14 +745,13 @@ export default function EventAdminPage({ params }: Props) {
                       value={`${missionStats.achievementRate}%`}
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => openMissionAdminPanel()}
+                  <Link
+                    href={`/admin/${eventId}/missions`}
                     className="mt-4 flex min-h-[48px] w-full items-center justify-center gap-1 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm touch-manipulation"
                   >
                     ミッション管理画面を開く
                     <ChevronRight className="h-5 w-5 shrink-0" strokeWidth={2} aria-hidden />
-                  </button>
+                  </Link>
                   {!eventFeatures.mission ? (
                     <p className="mt-2 text-[11px] font-semibold text-amber-700">
                       参加者向けはOFFです。準備ができたらトグルでONにしてください。
@@ -1096,279 +943,6 @@ export default function EventAdminPage({ params }: Props) {
           </div>
 
           <div className="mt-6 space-y-3">
-                {missionEditorOpen ? (
-                  <div ref={missionEditorPanelRef} className="rounded-xl border border-violet-100 bg-white p-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-bold text-zinc-900">ミッションの編集</h3>
-                      <button
-                        type="button"
-                        onClick={() => setMissionEditorOpen(false)}
-                        className="shrink-0 text-xs font-semibold text-[#7C3AED] underline underline-offset-2 touch-manipulation"
-                      >
-                        閉じる
-                      </button>
-                    </div>
-                    <div className="mt-3 flex flex-col gap-2">
-                      <input
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        placeholder="タイトル"
-                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                        disabled={!canEdit}
-                      />
-                      <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="説明文（任意）"
-                        className="min-h-20 rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                        disabled={!canEdit}
-                      />
-                      {showMissionCategoryUi ? (
-                        <input
-                          value={category}
-                          onChange={(e) => setCategory(e.target.value)}
-                          placeholder="カテゴリ（任意）"
-                          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                          disabled={!canEdit}
-                        />
-                      ) : null}
-                      <input
-                        value={order}
-                        onChange={(e) => setOrder(e.target.value)}
-                        placeholder="並び順（未入力で末尾）"
-                        type="number"
-                        min={0}
-                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                        disabled={!canEdit}
-                      />
-                      <select
-                        value={missionKind}
-                        onChange={(e) => setMissionKind(e.target.value as MissionKind)}
-                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                        disabled={!canEdit}
-                      >
-                        <option value="checkbox">チェック型（固定ポイント）</option>
-                        <option value="number">数量型（カウント × 1あたりpt）</option>
-                      </select>
-                      {missionKind === "checkbox" ? (
-                        <input
-                          value={points}
-                          onChange={(e) => setPoints(e.target.value)}
-                          placeholder="固定ポイント（例: 20）※必須"
-                          type="number"
-                          min={0}
-                          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                          disabled={!canEdit}
-                        />
-                      ) : (
-                        <input
-                          value={pointPerUnit}
-                          onChange={(e) => setPointPerUnit(e.target.value)}
-                          placeholder="1あたりのポイント（例: 50）※必須"
-                          type="number"
-                          min={1}
-                          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                          disabled={!canEdit}
-                        />
-                      )}
-                      <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-                        <input
-                          type="checkbox"
-                          checked={isActiveNew}
-                          onChange={(e) => setIsActiveNew(e.target.checked)}
-                          disabled={!canEdit}
-                        />
-                        公開（参加者に表示）
-                      </label>
-                      <button
-                        onClick={() => void handleCreateMission()}
-                        disabled={!canEdit || missionCreateBusy}
-                        className="rounded-xl bg-[#7C3AED] px-3 py-2 text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
-                      >
-                        {missionCreateBusy ? "保存中…" : "項目を追加"}
-                      </button>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      {missions.map((mission) => (
-                        <div key={mission.docId} className="rounded-xl border border-violet-100 bg-violet-50/50 p-3">
-                          <div className="flex flex-col gap-2">
-                            <input
-                              value={mission.title}
-                              onChange={(e) =>
-                                setMissions((prev) =>
-                                  prev.map((it) =>
-                                    it.docId === mission.docId ? { ...it, title: e.target.value } : it,
-                                  ),
-                                )
-                              }
-                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-sm font-bold outline-none focus:ring-2 focus:ring-violet-500/25"
-                              disabled={!canEdit}
-                            />
-                            <textarea
-                              value={mission.description}
-                              onChange={(e) =>
-                                setMissions((prev) =>
-                                  prev.map((it) =>
-                                    it.docId === mission.docId ? { ...it, description: e.target.value } : it,
-                                  ),
-                                )
-                              }
-                              className="min-h-16 rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                              disabled={!canEdit}
-                            />
-                            {showMissionCategoryUi ? (
-                              <input
-                                value={mission.category}
-                                onChange={(e) =>
-                                  setMissions((prev) =>
-                                    prev.map((it) =>
-                                      it.docId === mission.docId ? { ...it, category: e.target.value } : it,
-                                    ),
-                                  )
-                                }
-                                className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                                disabled={!canEdit}
-                              />
-                            ) : null}
-                            <input
-                              type="number"
-                              min={0}
-                              value={mission.order}
-                              onChange={(e) =>
-                                setMissions((prev) =>
-                                  prev.map((it) =>
-                                    it.docId === mission.docId
-                                      ? { ...it, order: Math.max(0, Number(e.target.value) || 0) }
-                                      : it,
-                                  ),
-                                )
-                              }
-                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                              disabled={!canEdit}
-                            />
-                            <select
-                              value={mission.type}
-                              onChange={(e) =>
-                                setMissions((prev) =>
-                                  prev.map((it) =>
-                                    it.docId === mission.docId
-                                      ? {
-                                          ...it,
-                                          type: e.target.value as MissionKind,
-                                          points:
-                                            e.target.value === "checkbox"
-                                              ? it.points > 0
-                                                ? it.points
-                                                : 10
-                                              : 0,
-                                          pointPerUnit:
-                                            e.target.value === "number"
-                                              ? it.pointPerUnit > 0
-                                                ? it.pointPerUnit
-                                                : 50
-                                              : 0,
-                                        }
-                                      : it,
-                                  ),
-                                )
-                              }
-                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                              disabled={!canEdit}
-                            >
-                              <option value="checkbox">チェック型</option>
-                              <option value="number">数量型</option>
-                            </select>
-                            {mission.type === "checkbox" ? (
-                              <input
-                                type="number"
-                                min={0}
-                                value={mission.points}
-                                onChange={(e) =>
-                                  setMissions((prev) =>
-                                    prev.map((it) =>
-                                      it.docId === mission.docId
-                                        ? { ...it, points: Number(e.target.value) || 0 }
-                                        : it,
-                                    ),
-                                  )
-                                }
-                                className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                                disabled={!canEdit}
-                              />
-                            ) : (
-                              <input
-                                type="number"
-                                min={1}
-                                value={mission.pointPerUnit}
-                                onChange={(e) =>
-                                  setMissions((prev) =>
-                                    prev.map((it) =>
-                                      it.docId === mission.docId
-                                        ? { ...it, pointPerUnit: Number(e.target.value) || 0 }
-                                        : it,
-                                    ),
-                                  )
-                                }
-                                className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                                disabled={!canEdit}
-                              />
-                            )}
-                            <label className="flex items-center gap-2 text-xs font-semibold text-zinc-700">
-                              <input
-                                type="checkbox"
-                                checked={mission.isActive}
-                                onChange={(e) =>
-                                  setMissions((prev) =>
-                                    prev.map((it) =>
-                                      it.docId === mission.docId ? { ...it, isActive: e.target.checked } : it,
-                                    ),
-                                  )
-                                }
-                                disabled={!canEdit}
-                              />
-                              公開
-                            </label>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-semibold text-emerald-700">order: {mission.order}</span>
-                              <div className="flex flex-wrap justify-end gap-1.5">
-                                <button
-                                  onClick={() => void moveMission(mission.docId, "up")}
-                                  disabled={!canEdit}
-                                  className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-bold disabled:opacity-50 touch-manipulation"
-                                >
-                                  ↑
-                                </button>
-                                <button
-                                  onClick={() => void moveMission(mission.docId, "down")}
-                                  disabled={!canEdit}
-                                  className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-bold disabled:opacity-50 touch-manipulation"
-                                >
-                                  ↓
-                                </button>
-                                <button
-                                  onClick={() => void handleUpdateMission(mission)}
-                                  disabled={!canEdit}
-                                  className="rounded-lg bg-[#7C3AED] px-2 py-1 text-xs font-bold text-white disabled:opacity-50 touch-manipulation"
-                                >
-                                  保存
-                                </button>
-                                <button
-                                  onClick={() => void handleDeleteMission(mission.docId)}
-                                  disabled={!canEdit}
-                                  className="rounded-lg bg-red-500 px-2 py-1 text-xs font-bold text-white disabled:opacity-50 touch-manipulation"
-                                >
-                                  削除
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
                 <Link
                   href={`/events/${eventId}/features?from=admin`}
                   className="flex items-center justify-between rounded-xl border border-zinc-100 bg-zinc-50/80 px-3 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-zinc-100 touch-manipulation"
