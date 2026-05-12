@@ -99,6 +99,7 @@ const DEFAULT_CATEGORY_COLOR = "custom";
 
 export default function EventAdminPage({ params }: Props) {
   const router = useRouter();
+  const showMissionCategoryUi = false;
   const [eventId, setEventId] = useState("");
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<AdminMission[]>([]);
@@ -1122,13 +1123,15 @@ export default function EventAdminPage({ params }: Props) {
                         className="min-h-20 rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
                         disabled={!canEdit}
                       />
-                      <input
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                        placeholder="カテゴリ（任意）"
-                        className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
-                        disabled={!canEdit}
-                      />
+                      {showMissionCategoryUi ? (
+                        <input
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                          placeholder="カテゴリ（任意）"
+                          className="rounded-xl border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-violet-500/30"
+                          disabled={!canEdit}
+                        />
+                      ) : null}
                       <input
                         value={order}
                         onChange={(e) => setOrder(e.target.value)}
@@ -1214,18 +1217,20 @@ export default function EventAdminPage({ params }: Props) {
                               className="min-h-16 rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
                               disabled={!canEdit}
                             />
-                            <input
-                              value={mission.category}
-                              onChange={(e) =>
-                                setMissions((prev) =>
-                                  prev.map((it) =>
-                                    it.docId === mission.docId ? { ...it, category: e.target.value } : it,
-                                  ),
-                                )
-                              }
-                              className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
-                              disabled={!canEdit}
-                            />
+                            {showMissionCategoryUi ? (
+                              <input
+                                value={mission.category}
+                                onChange={(e) =>
+                                  setMissions((prev) =>
+                                    prev.map((it) =>
+                                      it.docId === mission.docId ? { ...it, category: e.target.value } : it,
+                                    ),
+                                  )
+                                }
+                                className="rounded-lg border border-violet-200 bg-white px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-violet-500/25"
+                                disabled={!canEdit}
+                              />
+                            ) : null}
                             <input
                               type="number"
                               min={0}
