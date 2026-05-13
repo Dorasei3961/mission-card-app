@@ -55,6 +55,7 @@ type AdminQuiz = QuizDoc & {
   bankVisibility: BankVisibility;
   order: number;
 };
+type QuizSourceDoc = { id: string; data: () => Record<string, unknown> };
 
 type AnswerStats = Record<string, { total: number; correct: number }>;
 type ParticipantAnswer = {
@@ -93,6 +94,28 @@ function sortByOrder(a: AdminQuiz, b: AdminQuiz): number {
 
 function sortByLatest(a: AdminQuiz, b: AdminQuiz): number {
   return (b.updatedAt?.toMillis?.() ?? b.createdAt?.toMillis?.() ?? 0) - (a.updatedAt?.toMillis?.() ?? a.createdAt?.toMillis?.() ?? 0);
+}
+
+function readQuizOrder(rawOrder: unknown, fallbackOrder: number): number {
+  if (typeof rawOrder === "number" && Number.isFinite(rawOrder)) {
+    return Math.max(1, Math.floor(rawOrder));
+  }
+  return fallbackOrder;
+}
+
+function mapAdminQuizFromDoc(d: QuizSourceDoc, fallbackOrder: number): AdminQuiz {
+  const raw = d.data();
+  const q = normalizeQuizFromFirestore(d.id, raw);
+  const bankVisibility = normalizeBankVisibility(raw.adminStatus);
+  const explanationText = typeof raw.explanation === "string" ? raw.explanation : "";
+  const order = readQuizOrder(raw.order, fallbackOrder);
+  return { ...q, explanation: explanationText, bankVisibility, order };
+}
+
+function resequenceQuizzes(items: AdminQuiz[]): AdminQuiz[] {
+  return [...items]
+    .sort(sortByOrder)
+    .map((quiz, idx) => ({ ...quiz, order: idx + 1 }));
 }
 
 function fmtTs(ts: Timestamp | null): string {
@@ -212,19 +235,15 @@ export function QuizAdminPanel({ eventId }: Props) {
   useEffect(() => {
     const coll = collection(db, "events", eventId, "quizzes");
     const unsub = onSnapshot(coll, (snap) => {
-      const list = snap.docs.map((d, idx) => {
-        const raw = d.data() as Record<string, unknown>;
-        const q = normalizeQuizFromFirestore(d.id, raw);
-        const bankVisibility = normalizeBankVisibility(raw.adminStatus);
-        const explanationText = typeof raw.explanation === "string" ? raw.explanation : "";
-        const order = typeof raw.order === "number" && Number.isFinite(raw.order) ? Math.floor(raw.order) : idx + 1;
-        return { ...q, explanation: explanationText, bankVisibility, order };
-      });
+      const list = resequenceQuizzes(snap.docs.map((d, idx) => mapAdminQuizFromDoc(d, idx + 1)));
       setQuizzes(list);
-      if (!selectedQuizId && list.length > 0) setSelectedQuizId(list[0].id);
+      setSelectedQuizId((current) => {
+        if (current && list.some((quiz) => quiz.id === current)) return current;
+        return list[0]?.id ?? null;
+      });
     });
     return () => unsub();
-  }, [eventId, selectedQuizId]);
+  }, [eventId]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "events", eventId, "quizAnswers"), (snap) => {
@@ -471,13 +490,37 @@ export function QuizAdminPanel({ eventId }: Props) {
     }
   };
 
+  const compactQuizOrders = async () => {
+    const snap = await getDocs(collection(db, "events", eventId, "quizzes"));
+    const sorted = snap.docs
+      .map((quizDoc, idx) => ({
+        ref: quizDoc.ref,
+        quiz: mapAdminQuizFromDoc(quizDoc, idx + 1),
+      }))
+      .sort((a, b) => sortByOrder(a.quiz, b.quiz));
+    if (!sorted.length) return;
+    const batch = writeBatch(db);
+    let hasChanges = false;
+    sorted.forEach((item, idx) => {
+      const nextOrder = idx + 1;
+      if (item.quiz.order !== nextOrder) {
+        batch.set(item.ref, { order: nextOrder, updatedAt: serverTimestamp() }, { merge: true });
+        hasChanges = true;
+      }
+    });
+    if (hasChanges) {
+      await batch.commit();
+    }
+  };
+
   const deleteQuiz = async (quiz: AdminQuiz) => {
     if (busy) return;
     if (!window.confirm("この問題を削除しますか？")) return;
     setBusy(true);
     try {
       await deleteDoc(doc(db, "events", eventId, "quizzes", quiz.id));
-      setMessage("削除しました。");
+      await compactQuizOrders();
+      setMessage("削除して問題番号を詰めました。");
     } catch (e) {
       console.error(e);
       setMessage("削除に失敗しました。");
@@ -844,15 +887,6 @@ export function QuizAdminPanel({ eventId }: Props) {
       setBusy(false);
       setBusyAction(null);
     }
-  };
-
-  const mapAdminQuizFromDoc = (d: { id: string; data: () => Record<string, unknown> }, idx: number): AdminQuiz => {
-    const raw = d.data();
-    const q = normalizeQuizFromFirestore(d.id, raw);
-    const bankVisibility = normalizeBankVisibility(raw.adminStatus);
-    const explanationText = typeof raw.explanation === "string" ? raw.explanation : "";
-    const order = typeof raw.order === "number" && Number.isFinite(raw.order) ? Math.floor(raw.order) : idx + 1;
-    return { ...q, explanation: explanationText, bankVisibility, order };
   };
 
   /** Firestore `quizState` の部分更新と `quizRunState` ミラーをまとめて書く */
