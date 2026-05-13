@@ -18,6 +18,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { buildJoinPasswordForgotMailtoHref } from "../../lib/contact-mail";
 import { setEventSession } from "../../lib/event-session";
+import { isActiveEventRecord } from "../../lib/event-list";
 
 function normalizeParticipantKey(name: string): string {
   const normalized = name
@@ -86,15 +87,21 @@ export default function EventJoinPage() {
         const snap = await getDocs(collection(db, "events"));
         const rows = snap.docs
           .map((d) => {
-            const data = d.data() as { title?: string; creatorName?: string; status?: string };
+            const data = d.data() as {
+              title?: string;
+              creatorName?: string;
+              status?: string;
+              endedAt?: unknown;
+              deletedAt?: unknown;
+            };
             return {
               id: d.id,
               title: data.title?.trim() || "イベント",
               creatorName: data.creatorName?.trim() || "未設定",
-              status: data.status === "closed" ? "closed" : "active",
+              active: isActiveEventRecord(data),
             };
           })
-          .filter((ev) => ev.status === "active")
+          .filter((ev) => ev.active)
           .map(({ id, title, creatorName }) => ({ id, title, creatorName }));
         rows.sort((a, b) => a.title.localeCompare(b.title, "ja"));
         setActiveEvents(rows);
@@ -168,7 +175,7 @@ export default function EventJoinPage() {
       }
       const eventId = eventDoc.id;
       const eventData = eventDoc.data() as EventJoinFields;
-      if (eventData.status === "closed") {
+      if (!isActiveEventRecord(eventData)) {
         setMessage("このイベントは終了しました。新規参加はできません。");
         setPending(false);
         return;

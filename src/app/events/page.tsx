@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
+import { getEventCreatedAtMillis, normalizeEventListStatus } from "../lib/event-list";
 
 type EventRow = {
   id: string;
@@ -13,6 +14,7 @@ type EventRow = {
   status: "active" | "closed";
   rankingVisible: boolean;
   participantsCount: number;
+  createdAtMs: number;
 };
 
 export default function EventsListPage() {
@@ -34,23 +36,27 @@ export default function EventsListPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const eventSnap = await getDocs(query(collection(db, "events"), orderBy("createdAt", "desc")));
+      const eventSnap = await getDocs(collection(db, "events"));
       const rows = await Promise.all(
         eventSnap.docs.map(async (eventDoc) => {
           const data = eventDoc.data() as {
             title?: string;
             ownerUid?: string;
-            status?: "active" | "closed";
+            status?: string;
             rankingVisible?: boolean;
+            createdAt?: unknown;
+            endedAt?: unknown;
+            deletedAt?: unknown;
           };
           const participantsSnap = await getDocs(collection(db, "events", eventDoc.id, "participants"));
           return {
             id: eventDoc.id,
             title: String(data.title ?? "イベント"),
             ownerUid: String(data.ownerUid ?? ""),
-            status: data.status === "closed" ? "closed" : "active",
+            status: normalizeEventListStatus(data),
             rankingVisible: Boolean(data.rankingVisible),
             participantsCount: participantsSnap.size,
+            createdAtMs: getEventCreatedAtMillis(data),
           } as EventRow;
         }),
       );
@@ -60,7 +66,10 @@ export default function EventsListPage() {
     void load();
   }, []);
 
-  const sorted = useMemo(() => events, [events]);
+  const sorted = useMemo(
+    () => [...events].sort((a, b) => b.createdAtMs - a.createdAtMs || a.title.localeCompare(b.title, "ja")),
+    [events],
+  );
 
   return (
     <div className="min-h-screen bg-zinc-100 p-4">

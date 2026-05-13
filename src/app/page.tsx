@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import { getEventSession } from "./lib/event-session";
+import { isActiveEventRecord } from "./lib/event-list";
 
 type ActiveEvent = {
   id: string;
@@ -41,15 +42,21 @@ export default function HomePage() {
         const snap = await getDocs(collection(db, "events"));
         const rows = snap.docs
           .map((d) => {
-            const data = d.data() as { title?: string; creatorName?: string; status?: string };
+            const data = d.data() as {
+              title?: string;
+              creatorName?: string;
+              status?: string;
+              endedAt?: unknown;
+              deletedAt?: unknown;
+            };
             return {
               id: d.id,
               title: data.title?.trim() || "イベント",
               creatorName: data.creatorName?.trim() || "未設定",
-              status: data.status === "closed" ? "closed" : "active",
+              active: isActiveEventRecord(data),
             };
           })
-          .filter((event) => event.status === "active")
+          .filter((event) => event.active)
           .map(({ id, title, creatorName }) => ({ id, title, creatorName } as ActiveEvent));
         setActiveEvents(rows);
       } catch (error) {
