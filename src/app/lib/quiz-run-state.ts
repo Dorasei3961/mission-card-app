@@ -32,6 +32,8 @@ export type NormalizedQuizState = {
   answerStartedAt: Timestamp | null;
   /** 次の問題までの待機開始 */
   betweenStartedAt: Timestamp | null;
+  /** 出題中の回答締切（activatedAt + 制限時間、サーバー時刻基準の残り表示用） */
+  questionDeadlineAt: Timestamp | null;
 };
 
 export type QuizSettings = {
@@ -56,6 +58,7 @@ const DEFAULT_STATE: NormalizedQuizState = {
   autoAdvanceRunning: false,
   answerStartedAt: null,
   betweenStartedAt: null,
+  questionDeadlineAt: null,
 };
 
 export function normalizeRunStatus(raw: unknown): QuizRunStatus {
@@ -66,6 +69,33 @@ export function normalizeRunStatus(raw: unknown): QuizRunStatus {
     return raw;
   }
   return "stopped";
+}
+
+function toRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+}
+
+/** `quizRunState`（任意）を quizState フラット形に重ねる */
+function overlayQuizRunState(base: Record<string, unknown>, run: Record<string, unknown>): Record<string, unknown> {
+  if (!Object.keys(run).length) return base;
+  const out = { ...base };
+  if (typeof run.status === "string") out.status = run.status;
+  if (typeof run.currentQuizId === "string" || run.currentQuizId === null) {
+    out.currentQuestionId = run.currentQuizId === null ? null : run.currentQuizId;
+  }
+  if (typeof run.currentIndex === "number") out.currentQuestionIndex = run.currentIndex;
+  if (run.startedAt !== undefined) out.startedAt = run.startedAt;
+  if (run.answerRevealAt !== undefined) out.answerRevealAt = run.answerRevealAt;
+  if (typeof run.autoAdvanceRunning === "boolean") out.autoAdvanceRunning = run.autoAdvanceRunning;
+  return out;
+}
+
+/** イベントドキュメントから進行状態を正規化（`quizRunState` があればマージ） */
+export function normalizeEventQuizState(data: { quizState?: unknown; quizRunState?: unknown } | undefined): NormalizedQuizState {
+  if (!data) return normalizeQuizStateFromFirestore(undefined);
+  const base = toRecord(data.quizState);
+  const run = toRecord(data.quizRunState);
+  return normalizeQuizStateFromFirestore(overlayQuizRunState(base, run));
 }
 
 export function normalizeQuizStateFromFirestore(raw: Record<string, unknown> | undefined): NormalizedQuizState {
@@ -104,7 +134,37 @@ export function normalizeQuizStateFromFirestore(raw: Record<string, unknown> | u
     autoAdvanceRunning: raw.autoAdvanceRunning === true,
     answerStartedAt: (raw.answerStartedAt as Timestamp | null) ?? null,
     betweenStartedAt: (raw.betweenStartedAt as Timestamp | null) ?? null,
+    questionDeadlineAt: (raw.questionDeadlineAt as Timestamp | null) ?? null,
   };
+}
+
+export type QuizRunStateMirror = {
+  mode: QuizProgressMode;
+  status: QuizRunStatus;
+  currentQuizId: string | null;
+  currentIndex: number;
+  startedAt: Timestamp | null;
+  answerRevealAt: Timestamp | null;
+  autoAdvanceRunning: boolean;
+};
+
+export function buildQuizRunStateMirror(
+  mode: QuizProgressMode,
+  state: NormalizedQuizState,
+): QuizRunStateMirror {
+  return {
+    mode,
+    status: state.status,
+    currentQuizId: state.currentQuestionId,
+    currentIndex: state.currentQuestionIndex,
+    startedAt: state.startedAt,
+    answerRevealAt: state.answerStartedAt,
+    autoAdvanceRunning: state.autoAdvanceRunning,
+  };
+}
+
+export function mergeQuizStatePatch(prev: NormalizedQuizState, patch: Partial<NormalizedQuizState>): NormalizedQuizState {
+  return { ...prev, ...patch };
 }
 
 export function normalizeQuizSettingsFromFirestore(raw: Record<string, unknown> | undefined): QuizSettings {

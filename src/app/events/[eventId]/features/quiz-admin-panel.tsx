@@ -12,45 +12,47 @@ import {
   serverTimestamp,
   setDoc,
   writeBatch,
-  type Timestamp,
+  Timestamp,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
-  BookOpen,
-  CheckCircle2,
   ChevronRight,
   CircleDot,
   Copy,
   GripVertical,
-  Pause,
+  Loader2,
   Pencil,
   Play,
   Plus,
   Search,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { db } from "../../../lib/firebase";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
+  buildQuizRunStateMirror,
+  mergeQuizStatePatch,
+  normalizeEventQuizState,
   normalizeQuizSettingsFromFirestore,
-  normalizeQuizStateFromFirestore,
   type NormalizedQuizState,
-  type QuizProgressMode,
   type QuizSettings,
 } from "../../../lib/quiz-run-state";
 import { normalizeQuizFromFirestore, type QuizDoc, type QuizStatus } from "../../../lib/quiz-schema";
 
 type Props = { eventId: string };
 type AdminQuizTab = "create" | "run" | "results";
-type ListFilterStatus = "all" | "active" | "closed" | "unasked" | "draft" | "private";
+type ListFilterStatus = "all" | "public" | "private";
 type SortMode = "order" | "latest";
 type OrderMode = "fixed" | "random";
-type AdminDraftStatus = "draft" | "unasked" | "private";
+/** 問題バンクの公開状態（Firestore `adminStatus` と対応） */
+type BankVisibility = "public" | "private";
 type ResultOrder = "latest" | "question";
 
 type AdminQuiz = QuizDoc & {
   explanation: string;
-  adminStatus: AdminDraftStatus;
+  bankVisibility: BankVisibility;
   order: number;
 };
 
@@ -65,33 +67,24 @@ type ParticipantAnswer = {
   answeredAt: Timestamp | null;
 };
 
-function stateBadge(
-  q: AdminQuiz,
-  run: NormalizedQuizState,
-): { id: ListFilterStatus; label: string; cls: string } {
-  const isCurrent = run.currentQuestionId === q.id;
-  if (isCurrent && run.status === "question") {
-    return { id: "active", label: "出題中", cls: "bg-violet-100 text-violet-700 ring-violet-200" };
-  }
-  if (isCurrent && run.status === "answer") {
-    return { id: "active", label: "答え表示中", cls: "bg-violet-100 text-violet-800 ring-violet-300" };
-  }
-  if (isCurrent && run.status === "paused") {
-    return { id: "active", label: "一時停止", cls: "bg-amber-100 text-amber-800 ring-amber-200" };
-  }
-  if (q.status === "active" && !isCurrent) {
-    return { id: "active", label: "出題中", cls: "bg-violet-100 text-violet-700 ring-violet-200" };
+function normalizeBankVisibility(raw: unknown): BankVisibility {
+  if (raw === "private" || raw === "draft") return "private";
+  return "public";
+}
+
+function isBankPublished(q: AdminQuiz): boolean {
+  return q.bankVisibility === "public";
+}
+
+/** 問題作成タブ用：公開／下書きと出題ライフサイクル */
+function bankBadge(q: AdminQuiz): { id: ListFilterStatus; label: string; cls: string } {
+  if (!isBankPublished(q)) {
+    return { id: "private", label: "下書き", cls: "bg-zinc-100 text-zinc-700 ring-zinc-200" };
   }
   if (q.status === "closed") {
-    return { id: "closed", label: "出題済み", cls: "bg-emerald-100 text-emerald-700 ring-emerald-200" };
+    return { id: "public", label: "公開 · 出題済み", cls: "bg-emerald-50 text-emerald-800 ring-emerald-200" };
   }
-  if (q.adminStatus === "private") {
-    return { id: "private", label: "非公開", cls: "bg-red-100 text-red-700 ring-red-200" };
-  }
-  if (q.adminStatus === "draft") {
-    return { id: "draft", label: "下書き", cls: "bg-amber-100 text-amber-700 ring-amber-200" };
-  }
-  return { id: "unasked", label: "未出題", cls: "bg-zinc-100 text-zinc-600 ring-zinc-200" };
+  return { id: "public", label: "公開", cls: "bg-violet-50 text-violet-800 ring-violet-200" };
 }
 
 function sortByOrder(a: AdminQuiz, b: AdminQuiz): number {
@@ -107,9 +100,25 @@ function fmtTs(ts: Timestamp | null): string {
   return ts.toDate().toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** 主催者向け：停止中 / 出題中 / 答え表示中 / 終了（旧 paused は pausedFrom で寄せる） */
+function hostPhaseLabel(status: NormalizedQuizState["status"], pausedFrom: NormalizedQuizState["pausedFrom"]): string {
+  if (status === "stopped") return "停止中";
+  if (status === "question") return "出題中";
+  if (status === "answer") return "答え表示中";
+  if (status === "finished") return "終了";
+  if (status === "paused") {
+    if (pausedFrom === "answer") return "答え表示中";
+    if (pausedFrom === "question") return "出題中";
+    return "停止中";
+  }
+  return "停止中";
+}
+
 export function QuizAdminPanel({ eventId }: Props) {
   const [quizzes, setQuizzes] = useState<AdminQuiz[]>([]);
   const [busy, setBusy] = useState(false);
+  /** 二重押し時にどの操作が走っているか表示用 */
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [quizEnabled, setQuizEnabled] = useState(false);
   const [adminTab, setAdminTab] = useState<AdminQuizTab>("create");
@@ -118,10 +127,10 @@ export function QuizAdminPanel({ eventId }: Props) {
   const [searchText, setSearchText] = useState("");
   const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
   const [resultOrder, setResultOrder] = useState<ResultOrder>("latest");
-  const [manualAccordionOpen, setManualAccordionOpen] = useState(true);
-  const [autoAccordionOpen, setAutoAccordionOpen] = useState(true);
+  const [manualAccordionOpen, setManualAccordionOpen] = useState(false);
+  const [autoAccordionOpen, setAutoAccordionOpen] = useState(false);
 
-  const [runState, setRunState] = useState<NormalizedQuizState>(() => normalizeQuizStateFromFirestore(undefined));
+  const [runState, setRunState] = useState<NormalizedQuizState>(() => normalizeEventQuizState(undefined));
   const [quizSettings, setQuizSettings] = useState<QuizSettings>({ progressMode: "manual" });
   const [answerStats, setAnswerStats] = useState<AnswerStats>({});
   const [participantAnswers, setParticipantAnswers] = useState<ParticipantAnswer[]>([]);
@@ -148,7 +157,7 @@ export function QuizAdminPanel({ eventId }: Props) {
   const [points, setPoints] = useState("10");
   const [timeLimit, setTimeLimit] = useState("20");
   const [explanation, setExplanation] = useState("");
-  const [draftStatus, setDraftStatus] = useState<AdminDraftStatus>("draft");
+  const [publishVisibility, setPublishVisibility] = useState<BankVisibility>("public");
 
   const [settingTimeLimit, setSettingTimeLimit] = useState("20");
   const [settingOrderMode, setSettingOrderMode] = useState<OrderMode>("fixed");
@@ -163,17 +172,18 @@ export function QuizAdminPanel({ eventId }: Props) {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) {
         setQuizEnabled(false);
-        setRunState(normalizeQuizStateFromFirestore(undefined));
+        setRunState(normalizeEventQuizState(undefined));
         setQuizSettings({ progressMode: "manual" });
         return;
       }
       const data = snap.data() as {
         features?: unknown;
         quizState?: Record<string, unknown>;
+        quizRunState?: Record<string, unknown>;
         quizSettings?: Record<string, unknown>;
       };
       setQuizEnabled(resolveEventFeatures(data.features).quiz);
-      setRunState(normalizeQuizStateFromFirestore(data.quizState));
+      setRunState(normalizeEventQuizState(data));
       setQuizSettings(normalizeQuizSettingsFromFirestore(data.quizSettings));
     });
     return () => unsub();
@@ -205,14 +215,10 @@ export function QuizAdminPanel({ eventId }: Props) {
       const list = snap.docs.map((d, idx) => {
         const raw = d.data() as Record<string, unknown>;
         const q = normalizeQuizFromFirestore(d.id, raw);
-        const adminStatusRaw = raw.adminStatus;
-        const adminStatus: AdminDraftStatus =
-          adminStatusRaw === "private" || adminStatusRaw === "unasked" || adminStatusRaw === "draft"
-            ? adminStatusRaw
-            : "draft";
+        const bankVisibility = normalizeBankVisibility(raw.adminStatus);
         const explanationText = typeof raw.explanation === "string" ? raw.explanation : "";
         const order = typeof raw.order === "number" && Number.isFinite(raw.order) ? Math.floor(raw.order) : idx + 1;
-        return { ...q, explanation: explanationText, adminStatus, order };
+        return { ...q, explanation: explanationText, bankVisibility, order };
       });
       setQuizzes(list);
       if (!selectedQuizId && list.length > 0) setSelectedQuizId(list[0].id);
@@ -276,13 +282,13 @@ export function QuizAdminPanel({ eventId }: Props) {
     const norm = searchText.trim().toLowerCase();
     const sorted = [...quizzesWithStats].sort(sortMode === "order" ? sortByOrder : sortByLatest);
     return sorted.filter((q) => {
-      const badge = stateBadge(q, runState);
+      const badge = bankBadge(q);
       if (listFilterStatus !== "all" && badge.id !== listFilterStatus) return false;
       if (!norm) return true;
       const c = q.choices.join(" ").toLowerCase();
       return q.question.toLowerCase().includes(norm) || c.includes(norm);
     });
-  }, [quizzesWithStats, sortMode, listFilterStatus, searchText, runState]);
+  }, [quizzesWithStats, sortMode, listFilterStatus, searchText]);
 
   const [currentProgress, setCurrentProgress] = useState({ ratio: 0, secondsLeft: 0, total: 0 });
   useEffect(() => {
@@ -296,17 +302,17 @@ export function QuizAdminPanel({ eventId }: Props) {
       setCurrentProgress({ ratio: 0, secondsLeft: 0, total: 0 });
       return;
     }
-    const startMs = broadcastQuiz.activatedAt.toMillis();
+    const endMs =
+      runState.questionDeadlineAt?.toMillis() ?? broadcastQuiz.activatedAt.toMillis() + total * 1000;
     const tick = () => {
-      const elapsed = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
-      const left = Math.max(0, total - elapsed);
-      const ratio = Math.max(0, Math.min(100, Math.round((left / total) * 100)));
-      setCurrentProgress({ ratio, secondsLeft: left, total });
+      const leftSec = Math.max(0, Math.ceil((endMs - Date.now()) / 1000));
+      const ratio = Math.max(0, Math.min(100, Math.round((leftSec / total) * 100)));
+      setCurrentProgress({ ratio, secondsLeft: leftSec, total });
     };
     tick();
     const id = window.setInterval(tick, 500);
     return () => window.clearInterval(id);
-  }, [broadcastQuiz, runState.status, runState.timeLimitSeconds]);
+  }, [broadcastQuiz, runState.status, runState.timeLimitSeconds, runState.questionDeadlineAt]);
 
   const currentAnswerStats = useMemo(() => {
     if (!broadcastQuiz) return { total: 0, correctRate: 0 };
@@ -341,7 +347,7 @@ export function QuizAdminPanel({ eventId }: Props) {
     setPoints("10");
     setTimeLimit("20");
     setExplanation("");
-    setDraftStatus("draft");
+    setPublishVisibility("public");
   };
 
   const openAddModal = () => {
@@ -360,7 +366,7 @@ export function QuizAdminPanel({ eventId }: Props) {
     setPoints(String(quiz.points));
     setTimeLimit(quiz.timeLimit != null ? String(quiz.timeLimit) : "20");
     setExplanation(quiz.explanation);
-    setDraftStatus(quiz.adminStatus);
+    setPublishVisibility(quiz.bankVisibility);
     setModalOpen(true);
   };
 
@@ -409,7 +415,7 @@ export function QuizAdminPanel({ eventId }: Props) {
         points: Math.floor(pts),
         timeLimit: Math.floor(tl),
         explanation: explanation.trim(),
-        adminStatus: draftStatus,
+        adminStatus: publishVisibility === "public" ? "public" : "private",
         status: "draft" as QuizStatus,
         updatedAt: serverTimestamp(),
       };
@@ -449,7 +455,7 @@ export function QuizAdminPanel({ eventId }: Props) {
         points: quiz.points,
         timeLimit: quiz.timeLimit ?? 20,
         explanation: quiz.explanation,
-        adminStatus: "draft",
+        adminStatus: "public",
         status: "draft" as QuizStatus,
         order: maxOrder + 1,
         createdAt: serverTimestamp(),
@@ -480,14 +486,17 @@ export function QuizAdminPanel({ eventId }: Props) {
     }
   };
 
-  const activateQuiz = async (quiz: AdminQuiz, opts?: { fromAuto?: boolean }) => {
+  const activateQuiz = async (quiz: AdminQuiz, opts?: { fromAuto?: boolean; busyActionLabel?: string }) => {
     if (!quizEnabled) return;
     if (!opts?.fromAuto && busy) return;
-    if (!opts?.fromAuto) setBusy(true);
+    if (!opts?.fromAuto) {
+      setBusy(true);
+      setBusyAction(opts?.busyActionLabel ?? "公開中…");
+    }
     setMessage("");
     try {
       const presentable = [...quizzes]
-        .filter((q) => q.adminStatus !== "private" && q.status !== "closed")
+        .filter((q) => isBankPublished(q) && q.status !== "closed")
         .sort(sortByOrder);
       const qIdx = presentable.findIndex((q) => q.id === quiz.id);
       const currentQuestionIndex = qIdx >= 0 ? qIdx : 0;
@@ -499,11 +508,27 @@ export function QuizAdminPanel({ eventId }: Props) {
       });
       batch.set(
         doc(db, "events", eventId, "quizzes", quiz.id),
-        { status: "active", adminStatus: "unasked", activatedAt: serverTimestamp(), updatedAt: serverTimestamp() },
+        { status: "active", adminStatus: "public", activatedAt: serverTimestamp(), updatedAt: serverTimestamp() },
         { merge: true },
       );
       await batch.commit();
-      const tl = quiz.timeLimit ?? runStateRef.current.timeLimitSeconds;
+      const quizSnap = await getDoc(doc(db, "events", eventId, "quizzes", quiz.id));
+      const act = quizSnap.data()?.activatedAt as Timestamp | undefined;
+      const tl = Math.floor(quiz.timeLimit ?? runStateRef.current.timeLimitSeconds);
+      const deadlineAt = act && tl > 0 ? Timestamp.fromMillis(act.toMillis() + tl * 1000) : null;
+      const evSnap = await getDoc(doc(db, "events", eventId));
+      const mode = normalizeQuizSettingsFromFirestore(evSnap.data()?.quizSettings as Record<string, unknown>).progressMode;
+      const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+      const next = mergeQuizStatePatch(prev, {
+        status: "question",
+        currentQuestionId: quiz.id,
+        currentQuestionIndex,
+        timeLimitSeconds: tl,
+        questionDeadlineAt: deadlineAt,
+        pausedFrom: null,
+        answerStartedAt: null,
+        betweenStartedAt: null,
+      });
       await setDoc(
         doc(db, "events", eventId),
         {
@@ -514,6 +539,7 @@ export function QuizAdminPanel({ eventId }: Props) {
             startedAt: serverTimestamp(),
             remainingSeconds: tl,
             timeLimitSeconds: tl,
+            questionDeadlineAt: deadlineAt,
             orderMode: settingOrderMode,
             autoNext: settingAutoNext,
             showCountdown: settingShowCountdown,
@@ -525,37 +551,37 @@ export function QuizAdminPanel({ eventId }: Props) {
             answerStartedAt: null,
             betweenStartedAt: null,
           },
+          quizRunState: buildQuizRunStateMirror(mode, next),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-      setMessage(opts?.fromAuto ? "" : "問題を提出しました。");
+      setMessage(opts?.fromAuto ? "" : "問題を公開しました。");
       setSelectedQuizId(quiz.id);
     } catch (e) {
       console.error(e);
       setMessage("出題開始に失敗しました。");
     } finally {
-      if (!opts?.fromAuto) setBusy(false);
+      if (!opts?.fromAuto) {
+        setBusy(false);
+        setBusyAction(null);
+      }
     }
   };
 
-  const manualPresentQuestion = async () => {
+  const manualPublishQuestion = async () => {
     if (busy || !quizEnabled) return;
     const rs = runStateRef.current;
     if (rs.status !== "stopped") {
-      setMessage("いまは「問題提出」できません。");
-      return;
-    }
-    if (rs.betweenStartedAt) {
-      setMessage("次の問題までの待機中です。");
+      setMessage("「問題公開」は停止中にのみ押せます。");
       return;
     }
     const orderMode = settingOrderMode;
     const source = [...quizzesRef.current]
-      .filter((q) => q.status !== "closed" && q.adminStatus !== "private")
+      .filter((q) => isBankPublished(q) && q.status !== "closed")
       .sort(orderMode === "random" ? () => Math.random() - 0.5 : sortByOrder);
     if (!source.length) {
-      setMessage("出題できる問題がありません。");
+      setMessage("公開できる問題がありません（下書きのみ、または出題済みです）。");
       return;
     }
     await activateQuiz(source[0]);
@@ -564,14 +590,24 @@ export function QuizAdminPanel({ eventId }: Props) {
   const manualShowAnswer = async () => {
     if (busy) return;
     setBusy(true);
+    setBusyAction("答えを表示中…");
     try {
+      const evSnap = await getDoc(doc(db, "events", eventId));
+      const mode = normalizeQuizSettingsFromFirestore(evSnap.data()?.quizSettings as Record<string, unknown>).progressMode;
+      const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+      const next = mergeQuizStatePatch(prev, {
+        status: "answer",
+        questionDeadlineAt: null,
+      });
       await setDoc(
         doc(db, "events", eventId),
         {
           quizState: {
             status: "answer",
             answerStartedAt: serverTimestamp(),
+            questionDeadlineAt: null,
           },
+          quizRunState: buildQuizRunStateMirror(mode, next),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -582,108 +618,125 @@ export function QuizAdminPanel({ eventId }: Props) {
       setMessage("更新に失敗しました。");
     } finally {
       setBusy(false);
+      setBusyAction(null);
     }
   };
 
-  const manualPrepareNext = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const id = runStateRef.current.currentQuestionId;
-      if (id) {
-        await setDoc(doc(db, "events", eventId, "quizzes", id), { status: "closed", updatedAt: serverTimestamp() }, { merge: true });
+  const manualPublishNext = async () => {
+    if (busy || !quizEnabled) return;
+    const rs = runStateRef.current;
+    if (rs.status !== "answer") {
+      setMessage("「次を公開」は答え表示中にのみ押せます。");
+      return;
+    }
+    const curId = rs.currentQuestionId;
+    const orderMode = settingOrderMode;
+    const list = [...quizzesRef.current]
+      .filter((q) => isBankPublished(q) && q.status !== "closed")
+      .sort(orderMode === "random" ? () => Math.random() - 0.5 : sortByOrder);
+    const idx = curId ? list.findIndex((q) => q.id === curId) : -1;
+    const nextQ = idx >= 0 ? list[idx + 1] : null;
+    if (!nextQ) {
+      setBusy(true);
+      setBusyAction("終了処理中…");
+      try {
+        const evSnap = await getDoc(doc(db, "events", eventId));
+        const mode = normalizeQuizSettingsFromFirestore(evSnap.data()?.quizSettings as Record<string, unknown>).progressMode;
+        const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+        const finished = mergeQuizStatePatch(prev, {
+          status: "finished",
+          currentQuestionId: null,
+          autoAdvanceRunning: false,
+          betweenStartedAt: null,
+          answerStartedAt: null,
+          questionDeadlineAt: null,
+        });
+        await setDoc(
+          doc(db, "events", eventId),
+          {
+            quizState: {
+              status: "finished",
+              currentQuestionId: null,
+              autoAdvanceRunning: false,
+              answerStartedAt: null,
+              betweenStartedAt: null,
+              questionDeadlineAt: null,
+            },
+            quizRunState: buildQuizRunStateMirror(mode, finished),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        if (curId) {
+          await setDoc(doc(db, "events", eventId, "quizzes", curId), { status: "closed", updatedAt: serverTimestamp() }, { merge: true });
+        }
+        setMessage("最後の問題まで完了しました。");
+      } catch (e) {
+        console.error(e);
+        setMessage("更新に失敗しました。");
+      } finally {
+        setBusy(false);
+        setBusyAction(null);
       }
+      return;
+    }
+    await activateQuiz(nextQ, { busyActionLabel: "次を公開中…" });
+  };
+
+  const moveQuizOrder = async (quiz: AdminQuiz, dir: -1 | 1) => {
+    if (busy) return;
+    const sorted = [...quizzes].sort(sortByOrder);
+    const i = sorted.findIndex((q) => q.id === quiz.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= sorted.length) return;
+    const a = sorted[i];
+    const b = sorted[j];
+    setBusy(true);
+    setBusyAction("並び替え中…");
+    try {
+      const batch = writeBatch(db);
+      batch.set(doc(db, "events", eventId, "quizzes", a.id), { order: b.order, updatedAt: serverTimestamp() }, { merge: true });
+      batch.set(doc(db, "events", eventId, "quizzes", b.id), { order: a.order, updatedAt: serverTimestamp() }, { merge: true });
+      await batch.commit();
+      setMessage("並び順を更新しました。");
+    } catch (e) {
+      console.error(e);
+      setMessage("並び替えに失敗しました。");
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  };
+
+  const stopAll = async () => {
+    if (busy) return;
+    autoLoopCancelRef.current = true;
+    setBusy(true);
+    setBusyAction("停止中…");
+    try {
+      const evSnap = await getDoc(doc(db, "events", eventId));
+      const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+      const next = mergeQuizStatePatch(prev, { autoAdvanceRunning: false, betweenStartedAt: null });
       await setDoc(
         doc(db, "events", eventId),
         {
+          quizSettings: { progressMode: "manual" },
           quizState: {
-            status: "stopped",
-            currentQuestionId: null,
-            remainingSeconds: null,
-            answerStartedAt: null,
-            pausedFrom: null,
+            autoAdvanceRunning: false,
             betweenStartedAt: null,
           },
+          quizRunState: buildQuizRunStateMirror("manual", next),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-      setMessage("次の問題に進む準備ができました。");
+      setMessage("停止しました。手動進行タブで操作を続けられます。");
     } catch (e) {
       console.error(e);
-      setMessage("更新に失敗しました。");
+      setMessage("停止に失敗しました。");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const pauseLive = async () => {
-    if (busy) return;
-    const rs = runStateRef.current;
-    if (rs.status !== "question" && rs.status !== "answer") return;
-    setBusy(true);
-    try {
-      const pausedFrom: "question" | "answer" = rs.status === "answer" ? "answer" : "question";
-      await setDoc(
-        doc(db, "events", eventId),
-        {
-          quizState: { status: "paused", pausedFrom },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      setMessage("一時停止しました。");
-    } catch (e) {
-      console.error(e);
-      setMessage("一時停止に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const resumeLive = async () => {
-    if (busy) return;
-    const rs = runStateRef.current;
-    if (rs.status !== "paused") return;
-    setBusy(true);
-    try {
-      const target = rs.pausedFrom ?? "question";
-      await setDoc(
-        doc(db, "events", eventId),
-        {
-          quizState: { status: target, pausedFrom: null },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      setMessage("再開しました。");
-    } catch (e) {
-      console.error(e);
-      setMessage("再開に失敗しました。");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const setProgressMode = async (mode: QuizProgressMode) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await setDoc(
-        doc(db, "events", eventId),
-        {
-          quizSettings: { progressMode: mode },
-          quizState: { autoAdvanceRunning: false },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      setMessage(`進行モードを${mode === "auto" ? "自動進行" : "運営手動進行"}にしました。`);
-    } catch (e) {
-      console.error(e);
-      setMessage("保存に失敗しました。");
-    } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
@@ -697,7 +750,21 @@ export function QuizAdminPanel({ eventId }: Props) {
     const ads = Math.max(1, Math.floor(Number(settingAnswerDisplay)) || 5);
     const nd = Math.max(0, Math.floor(Number(settingNextDelay)) || 3);
     setBusy(true);
+    setBusyAction("設定を保存中…");
     try {
+      const evSnap = await getDoc(doc(db, "events", eventId));
+      const mode = normalizeQuizSettingsFromFirestore(evSnap.data()?.quizSettings as Record<string, unknown>).progressMode;
+      const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+      const next = mergeQuizStatePatch(prev, {
+        timeLimitSeconds: Math.floor(tl),
+        orderMode: settingOrderMode,
+        autoNext: settingAutoNext,
+        showCountdown: settingShowCountdown,
+        answerDisplaySeconds: ads,
+        nextDelaySeconds: nd,
+        autoFinishWhenComplete: settingAutoFinish,
+        autoRevealAnswer: settingAutoReveal,
+      });
       await setDoc(
         doc(db, "events", eventId),
         {
@@ -711,6 +778,7 @@ export function QuizAdminPanel({ eventId }: Props) {
             autoFinishWhenComplete: settingAutoFinish,
             autoRevealAnswer: settingAutoReveal,
           },
+          quizRunState: buildQuizRunStateMirror(mode, next),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -721,28 +789,7 @@ export function QuizAdminPanel({ eventId }: Props) {
       setMessage("保存に失敗しました。");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const stopAutoAdvance = async () => {
-    if (busy) return;
-    autoLoopCancelRef.current = true;
-    setBusy(true);
-    try {
-      await setDoc(
-        doc(db, "events", eventId),
-        {
-          quizState: { autoAdvanceRunning: false },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      setMessage("自動進行を停止しました。");
-    } catch (e) {
-      console.error(e);
-      setMessage("停止に失敗しました。");
-    } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
@@ -750,74 +797,79 @@ export function QuizAdminPanel({ eventId }: Props) {
     if (busy || !quizEnabled) return;
     autoLoopCancelRef.current = false;
     setBusy(true);
+    setBusyAction("自動開始中…");
     try {
+      const evSnap0 = await getDoc(doc(db, "events", eventId));
+      const prev0 = normalizeEventQuizState(evSnap0.data() as Record<string, unknown>);
+      const primed = mergeQuizStatePatch(prev0, { autoAdvanceRunning: true });
       await setDoc(
         doc(db, "events", eventId),
         {
+          quizSettings: { progressMode: "auto" },
           quizState: { autoAdvanceRunning: true },
+          quizRunState: buildQuizRunStateMirror("auto", primed),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
       const snap = await getDoc(doc(db, "events", eventId));
-      let rs = normalizeQuizStateFromFirestore(snap.data()?.quizState as Record<string, unknown>);
+      let rs = normalizeEventQuizState(snap.data() as Record<string, unknown>);
       if (rs.status === "finished") {
+        const prev1 = normalizeEventQuizState(snap.data() as Record<string, unknown>);
+        const next1 = mergeQuizStatePatch(prev1, { status: "stopped" });
         await setDoc(
           doc(db, "events", eventId),
-          { quizState: { status: "stopped" }, updatedAt: serverTimestamp() },
+          {
+            quizState: { status: "stopped" },
+            quizRunState: buildQuizRunStateMirror("auto", next1),
+            updatedAt: serverTimestamp(),
+          },
           { merge: true },
         );
         const snap2 = await getDoc(doc(db, "events", eventId));
-        rs = normalizeQuizStateFromFirestore(snap2.data()?.quizState as Record<string, unknown>);
+        rs = normalizeEventQuizState(snap2.data() as Record<string, unknown>);
       }
       if (rs.status === "stopped" && !rs.betweenStartedAt) {
         const orderMode = settingOrderMode;
         const source = [...quizzesRef.current]
-          .filter((q) => q.status !== "closed" && q.adminStatus !== "private")
+          .filter((q) => isBankPublished(q) && q.status !== "closed")
           .sort(orderMode === "random" ? () => Math.random() - 0.5 : sortByOrder);
         if (source.length) await activateQuiz(source[0], { fromAuto: true });
       }
+      setMessage("自動進行を開始しました。");
     } catch (e) {
       console.error(e);
       setMessage("自動進行の開始に失敗しました。");
     } finally {
       setBusy(false);
-    }
-  };
-
-  const resumeAutoAdvance = async () => {
-    if (busy) return;
-    autoLoopCancelRef.current = false;
-    setBusy(true);
-    try {
-      await setDoc(
-        doc(db, "events", eventId),
-        {
-          quizState: { autoAdvanceRunning: true },
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      setMessage("自動進行を再開しました。");
-    } catch (e) {
-      console.error(e);
-      setMessage("再開に失敗しました。");
-    } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
   const mapAdminQuizFromDoc = (d: { id: string; data: () => Record<string, unknown> }, idx: number): AdminQuiz => {
     const raw = d.data();
     const q = normalizeQuizFromFirestore(d.id, raw);
-    const adminStatusRaw = raw.adminStatus;
-    const adminStatus: AdminDraftStatus =
-      adminStatusRaw === "private" || adminStatusRaw === "unasked" || adminStatusRaw === "draft"
-        ? adminStatusRaw
-        : "draft";
+    const bankVisibility = normalizeBankVisibility(raw.adminStatus);
     const explanationText = typeof raw.explanation === "string" ? raw.explanation : "";
     const order = typeof raw.order === "number" && Number.isFinite(raw.order) ? Math.floor(raw.order) : idx + 1;
-    return { ...q, explanation: explanationText, adminStatus, order };
+    return { ...q, explanation: explanationText, bankVisibility, order };
+  };
+
+  /** Firestore `quizState` の部分更新と `quizRunState` ミラーをまとめて書く */
+  const syncQuizRunMirror = async (quizStatePatch: Record<string, unknown>, logicMerge: Partial<NormalizedQuizState>) => {
+    const evSnap = await getDoc(doc(db, "events", eventId));
+    const mode = normalizeQuizSettingsFromFirestore(evSnap.data()?.quizSettings as Record<string, unknown>).progressMode;
+    const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+    const next = mergeQuizStatePatch(prev, logicMerge);
+    await setDoc(
+      doc(db, "events", eventId),
+      {
+        quizState: quizStatePatch,
+        quizRunState: buildQuizRunStateMirror(mode, next),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
   };
 
   useEffect(() => {
@@ -826,7 +878,7 @@ export function QuizAdminPanel({ eventId }: Props) {
       if (autoLoopCancelRef.current || busy) return;
       const snap = await getDoc(doc(db, "events", eventId));
       if (!snap.exists()) return;
-      const rs = normalizeQuizStateFromFirestore(snap.data()?.quizState as Record<string, unknown>);
+      const rs = normalizeEventQuizState(snap.data() as Record<string, unknown>);
       if (!rs.autoAdvanceRunning) return;
       const now = Date.now();
       if (rs.status === "question" && rs.currentQuestionId) {
@@ -836,14 +888,11 @@ export function QuizAdminPanel({ eventId }: Props) {
           typeof qd.data()?.timeLimit === "number" && (qd.data()?.timeLimit as number) > 0
             ? Math.floor(qd.data()?.timeLimit as number)
             : rs.timeLimitSeconds;
-        if (act && now >= act.toMillis() + tl * 1000) {
-          await setDoc(
-            doc(db, "events", eventId),
-            {
-              quizState: { status: "answer", answerStartedAt: serverTimestamp() },
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
+        const endMs = rs.questionDeadlineAt?.toMillis() ?? (act && tl > 0 ? act.toMillis() + tl * 1000 : null);
+        if (endMs != null && now >= endMs) {
+          await syncQuizRunMirror(
+            { status: "answer", answerStartedAt: serverTimestamp(), questionDeadlineAt: null },
+            { status: "answer", questionDeadlineAt: null },
           );
         }
         return;
@@ -857,18 +906,15 @@ export function QuizAdminPanel({ eventId }: Props) {
               { merge: true },
             );
           }
-          await setDoc(
-            doc(db, "events", eventId),
+          await syncQuizRunMirror(
             {
-              quizState: {
-                status: "stopped",
-                currentQuestionId: null,
-                answerStartedAt: null,
-                betweenStartedAt: serverTimestamp(),
-              },
-              updatedAt: serverTimestamp(),
+              status: "stopped",
+              currentQuestionId: null,
+              answerStartedAt: null,
+              questionDeadlineAt: null,
+              betweenStartedAt: serverTimestamp(),
             },
-            { merge: true },
+            { status: "stopped", currentQuestionId: null, answerStartedAt: null, questionDeadlineAt: null },
           );
         }
         return;
@@ -878,31 +924,30 @@ export function QuizAdminPanel({ eventId }: Props) {
           const qsSnap = await getDocs(collection(db, "events", eventId, "quizzes"));
           const items = qsSnap.docs.map((docc, idx) => mapAdminQuizFromDoc(docc, idx));
           const nextSource = items
-            .filter((q) => q.status !== "closed" && q.adminStatus !== "private")
+            .filter((q) => isBankPublished(q) && q.status !== "closed")
             .sort(rs.orderMode === "random" ? () => Math.random() - 0.5 : sortByOrder);
           if (!nextSource.length) {
             if (rs.autoFinishWhenComplete) {
-              await setDoc(
-                doc(db, "events", eventId),
+              await syncQuizRunMirror(
                 {
-                  quizState: {
-                    status: "finished",
-                    autoAdvanceRunning: false,
-                    currentQuestionId: null,
-                    betweenStartedAt: null,
-                  },
-                  updatedAt: serverTimestamp(),
+                  status: "finished",
+                  autoAdvanceRunning: false,
+                  currentQuestionId: null,
+                  betweenStartedAt: null,
+                  questionDeadlineAt: null,
                 },
-                { merge: true },
+                {
+                  status: "finished",
+                  autoAdvanceRunning: false,
+                  currentQuestionId: null,
+                  betweenStartedAt: null,
+                  questionDeadlineAt: null,
+                },
               );
             } else {
-              await setDoc(
-                doc(db, "events", eventId),
-                {
-                  quizState: { autoAdvanceRunning: false, betweenStartedAt: null },
-                  updatedAt: serverTimestamp(),
-                },
-                { merge: true },
+              await syncQuizRunMirror(
+                { autoAdvanceRunning: false, betweenStartedAt: null },
+                { autoAdvanceRunning: false, betweenStartedAt: null },
               );
             }
             return;
@@ -922,18 +967,15 @@ export function QuizAdminPanel({ eventId }: Props) {
       const key = `${broadcastQuiz.id}:${broadcastQuiz.activatedAt.toMillis()}`;
       if (manualRevealSentRef.current === key) return undefined;
       const total = broadcastQuiz.timeLimit ?? runState.timeLimitSeconds;
-      const deadline = broadcastQuiz.activatedAt.toMillis() + total * 1000;
+      const deadline =
+        runState.questionDeadlineAt?.toMillis() ?? broadcastQuiz.activatedAt.toMillis() + total * 1000;
       const id = window.setInterval(() => {
         if (Date.now() >= deadline) {
           if (manualRevealSentRef.current === key) return;
           manualRevealSentRef.current = key;
-          void setDoc(
-            doc(db, "events", eventId),
-            {
-              quizState: { status: "answer", answerStartedAt: serverTimestamp() },
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
+          void syncQuizRunMirror(
+            { status: "answer", answerStartedAt: serverTimestamp(), questionDeadlineAt: null },
+            { status: "answer", questionDeadlineAt: null },
           );
         }
       }, 400);
@@ -946,6 +988,7 @@ export function QuizAdminPanel({ eventId }: Props) {
     runState.autoRevealAnswer,
     runState.status,
     runState.timeLimitSeconds,
+    runState.questionDeadlineAt,
     broadcastQuiz?.id,
     broadcastQuiz?.activatedAt,
     broadcastQuiz?.timeLimit,
@@ -953,9 +996,9 @@ export function QuizAdminPanel({ eventId }: Props) {
   ]);
 
   const manualAllDisabled = runState.status === "finished";
-  const manualCanPresent = runState.status === "stopped" && !runState.betweenStartedAt;
+  const manualCanPublishQuestion = runState.status === "stopped" && !manualAllDisabled;
   const manualCanShowAnswer = runState.status === "question" && !manualAllDisabled;
-  const manualCanNext = runState.status === "answer" && !manualAllDisabled;
+  const manualCanPublishNext = runState.status === "answer" && !manualAllDisabled;
 
   return (
     <div className="space-y-4 pb-32 text-[#111827]">
@@ -1027,7 +1070,7 @@ export function QuizAdminPanel({ eventId }: Props) {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-bold text-[#111827]">問題作成</h2>
-                  <p className="text-sm text-[#6B7280]">問題の作成・編集・並び替えができます。</p>
+                  <p className="text-sm text-[#6B7280]">ここでは問題の作成・編集・並び替えのみ行います。出題や進行は「クイズ進行」タブで行ってください。</p>
                 </div>
                 <button
                   type="button"
@@ -1044,12 +1087,9 @@ export function QuizAdminPanel({ eventId }: Props) {
                   onChange={(e) => setListFilterStatus(e.target.value as ListFilterStatus)}
                   className="min-h-[44px] rounded-[14px] border border-[#E9D5FF] bg-white px-3 text-sm text-[#111827]"
                 >
-                  <option value="all">すべての状態</option>
-                  <option value="active">出題中</option>
-                  <option value="closed">出題済み</option>
-                  <option value="unasked">未出題</option>
-                  <option value="draft">下書き</option>
-                  <option value="private">非公開</option>
+                  <option value="all">すべて</option>
+                  <option value="public">公開のみ</option>
+                  <option value="private">下書きのみ</option>
                 </select>
                 <select
                   value={sortMode}
@@ -1073,23 +1113,19 @@ export function QuizAdminPanel({ eventId }: Props) {
 
             <section className="space-y-3">
               {filteredQuizzes.map((q) => {
-                const badge = stateBadge(q, runState);
-                const isLiveQ = runState.currentQuestionId === q.id && runState.status === "question";
-                const isAns = runState.currentQuestionId === q.id && runState.status === "answer";
-                const activeStyle = isLiveQ
-                  ? "border-[#7C3AED] bg-violet-50/80"
-                  : isAns
-                    ? "border-[#7C3AED] bg-violet-50/80"
-                    : q.status === "closed"
-                      ? "border-emerald-300 bg-emerald-50/60"
-                      : "border-[#E9D5FF] bg-white";
+                const badge = bankBadge(q);
+                const sorted = [...quizzesWithStats].sort(sortByOrder);
+                const pos = sorted.findIndex((x) => x.id === q.id);
+                const canUp = pos > 0;
+                const canDown = pos >= 0 && pos < sorted.length - 1;
                 return (
                   <article
                     key={q.id}
-                    className={`relative overflow-hidden rounded-[18px] border p-4 shadow-sm ${activeStyle}`}
+                    className={`relative overflow-hidden rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm ${
+                      q.status === "closed" ? "border-emerald-200/80 bg-emerald-50/30" : ""
+                    }`}
                     onClick={() => setSelectedQuizId(q.id)}
                   >
-                    {isLiveQ || isAns ? <div className="absolute top-0 left-0 h-full w-1.5 bg-[#7C3AED]" /> : null}
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="flex items-center gap-1 text-xs font-semibold text-[#6B7280]">
@@ -1102,8 +1138,6 @@ export function QuizAdminPanel({ eventId }: Props) {
                       </div>
                       <div className="text-right">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${badge.cls}`}>{badge.label}</span>
-                        <p className="mt-2 text-[11px] text-[#6B7280]">正解率 {q.correctRate}%</p>
-                        <p className="text-[11px] text-[#6B7280]">回答数 {q.totalAnswers}</p>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
@@ -1116,14 +1150,29 @@ export function QuizAdminPanel({ eventId }: Props) {
                       </button>
                       <button
                         type="button"
-                        disabled={busy || q.status === "active" || !quizEnabled}
+                        disabled={busy || !canUp}
                         onClick={(e) => {
                           e.stopPropagation();
-                          void activateQuiz(q);
+                          void moveQuizOrder(q, -1);
                         }}
-                        className="rounded-lg border border-[#7C3AED] bg-white px-3 py-1.5 text-[#7C3AED] disabled:opacity-50 touch-manipulation"
+                        className="inline-flex items-center gap-0.5 rounded-lg border border-[#E9D5FF] bg-white px-2 py-1.5 text-[#111827] disabled:opacity-40 touch-manipulation"
+                        aria-label="上へ並べ替え"
                       >
-                        {q.status === "active" ? "出題中" : "出題する"}
+                        <ArrowUp className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                        上へ
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy || !canDown}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void moveQuizOrder(q, 1);
+                        }}
+                        className="inline-flex items-center gap-0.5 rounded-lg border border-[#E9D5FF] bg-white px-2 py-1.5 text-[#111827] disabled:opacity-40 touch-manipulation"
+                        aria-label="下へ並べ替え"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" strokeWidth={2} aria-hidden />
+                        下へ
                       </button>
                       <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); void deleteQuiz(q); }} className="rounded-lg px-3 py-1.5 font-bold text-red-600 touch-manipulation">
                         削除
@@ -1142,18 +1191,24 @@ export function QuizAdminPanel({ eventId }: Props) {
 
           <aside className="order-last space-y-3 lg:order-none">
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[#111827]">進行モードについて</h3>
+              <h3 className="text-sm font-bold text-[#111827]">このタブについて</h3>
               <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
-                <span className="font-semibold text-[#111827]">運営手動進行：</span>
-                運営者がボタンを押して、「問題提出 → 答え表示 → 次の問題へ」を手動で操作します。
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
-                <span className="font-semibold text-[#111827]">自動進行：</span>
-                開始ボタンを押すだけで、問題提出・回答時間・答え表示・次の問題へを自動で行います。
+                問題の内容・選択肢・公開／下書き・並び順だけを管理します。参加者への出題は「クイズ進行」タブから行います。
               </p>
             </section>
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[#111827]">現在の状態について</h3>
+              <h3 className="text-sm font-bold text-[#111827]">公開と下書き</h3>
+              <ul className="mt-2 space-y-1.5 text-xs text-[#6B7280]">
+                <li>
+                  <span className="font-semibold text-[#111827]">公開：</span>クイズ進行で出題できる問題です。
+                </li>
+                <li>
+                  <span className="font-semibold text-[#111827]">下書き：</span>まだ出題に使いません（非公開）。
+                </li>
+              </ul>
+            </section>
+            <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold text-[#111827]">進行側の状態（参考）</h3>
               <ul className="mt-2 space-y-1.5 text-xs text-[#6B7280]">
                 <li>
                   <span className="font-semibold text-[#111827]">停止中：</span>出題していません
@@ -1163,9 +1218,6 @@ export function QuizAdminPanel({ eventId }: Props) {
                 </li>
                 <li>
                   <span className="font-semibold text-[#111827]">答え表示中：</span>答えと解説を表示中
-                </li>
-                <li>
-                  <span className="font-semibold text-[#111827]">一時停止中：</span>出題を一時停止しています
                 </li>
                 <li>
                   <span className="font-semibold text-[#111827]">終了：</span>すべての問題が終了しました
@@ -1179,104 +1231,86 @@ export function QuizAdminPanel({ eventId }: Props) {
       {adminTab === "run" ? (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4">
-            <h2 className="text-lg font-bold text-[#111827]">クイズ進行</h2>
-
-            <div className="flex flex-wrap gap-2">
-              <div className="inline-flex rounded-[14px] border border-[#E9D5FF] bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void setProgressMode("manual")}
-                  className={`rounded-[12px] px-4 py-2 text-xs font-bold touch-manipulation sm:text-sm ${
-                    quizSettings.progressMode === "manual" ? "bg-[#7C3AED] text-white" : "bg-white text-[#111827]"
-                  }`}
-                >
-                  運営手動進行
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void setProgressMode("auto")}
-                  className={`rounded-[12px] px-4 py-2 text-xs font-bold touch-manipulation sm:text-sm ${
-                    quizSettings.progressMode === "auto" ? "bg-[#7C3AED] text-white" : "bg-white text-[#111827]"
-                  }`}
-                >
-                  自動進行
-                </button>
+            <div className="sticky top-2 z-20 space-y-3 rounded-[18px] border border-[#E9D5FF] bg-white/95 p-4 shadow-md backdrop-blur-md lg:top-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-[#111827]">クイズ進行</h2>
+                {runState.autoAdvanceRunning && quizSettings.progressMode === "auto" ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void stopAll()}
+                    className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[14px] border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 shadow-sm disabled:opacity-50 touch-manipulation"
+                  >
+                    {busyAction === "停止中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                    停止
+                  </button>
+                ) : null}
               </div>
-              {runState.status === "question" || runState.status === "answer" ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void pauseLive()}
-                  className="rounded-[14px] border border-[#E9D5FF] bg-white px-4 py-2 text-xs font-bold text-[#111827] shadow-sm touch-manipulation"
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold shadow-sm sm:text-sm ${
+                    runState.autoAdvanceRunning && quizSettings.progressMode === "auto"
+                      ? "bg-[#7C3AED] text-white ring-2 ring-violet-300/60"
+                      : "bg-emerald-600 text-white ring-2 ring-emerald-300/60"
+                  }`}
                 >
-                  一時停止
-                </button>
-              ) : null}
-              {runState.status === "paused" ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void resumeLive()}
-                  className="rounded-[14px] border border-[#7C3AED] bg-violet-50 px-4 py-2 text-xs font-bold text-[#7C3AED] touch-manipulation"
-                >
-                  再開
-                </button>
-              ) : null}
+                  <span className="h-2 w-2 shrink-0 rounded-full bg-white/90" aria-hidden />
+                  {runState.autoAdvanceRunning && quizSettings.progressMode === "auto" ? "自動進行中" : "手動進行中"}
+                </span>
+                <span className="rounded-full border border-[#E9D5FF] bg-white px-3 py-1.5 text-xs font-bold text-[#111827] shadow-sm">
+                  状態：{hostPhaseLabel(runState.status, runState.pausedFrom)}
+                </span>
+              </div>
+
+              <div className="border-t border-[#E9D5FF] pt-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-violet-600">現在の状態</p>
+                <div className="mt-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-lg font-bold text-[#111827]">
+                      第{broadcastQuiz?.order ?? "—"}問{" "}
+                      <span className="text-violet-700">{hostPhaseLabel(runState.status, runState.pausedFrom)}</span>
+                    </p>
+                    {runState.status === "question" ? (
+                      <p className="text-sm font-semibold tabular-nums text-[#7C3AED]">残り{currentProgress.secondsLeft}秒</p>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-[#6B7280]">
+                    <span>
+                      回答数 <strong className="tabular-nums text-[#111827]">{currentAnswerStats.total}</strong>
+                    </span>
+                    <span>
+                      正答率 <strong className="tabular-nums text-[#111827]">{currentAnswerStats.correctRate}%</strong>
+                    </span>
+                  </div>
+                  <p className="mt-4 text-xs font-semibold text-[#6B7280]">問題</p>
+                  <p className="mt-1 text-base font-bold leading-snug text-[#111827]">{broadcastQuiz?.question ?? "—"}</p>
+                </div>
+              </div>
             </div>
 
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-              <p className="text-sm font-bold text-[#111827]">現在の状態</p>
-              <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    {runState.status === "stopped" ? <CircleDot className="h-8 w-8 text-zinc-400" strokeWidth={2} aria-hidden /> : null}
-                    {runState.status === "question" ? <Play className="h-8 w-8 text-amber-500" strokeWidth={2} aria-hidden /> : null}
-                    {runState.status === "answer" ? <BookOpen className="h-8 w-8 text-[#7C3AED]" strokeWidth={2} aria-hidden /> : null}
-                    {runState.status === "paused" ? <Pause className="h-8 w-8 text-orange-500" strokeWidth={2} aria-hidden /> : null}
-                    {runState.status === "finished" ? <CheckCircle2 className="h-8 w-8 text-[#7C3AED]" strokeWidth={2} aria-hidden /> : null}
-                    <p className="text-xl font-bold text-[#111827]">
-                      {runState.status === "stopped" && "停止中"}
-                      {runState.status === "question" && "出題中（回答受付中）"}
-                      {runState.status === "answer" && "答え表示中"}
-                      {runState.status === "paused" && "一時停止中"}
-                      {runState.status === "finished" && "終了"}
-                    </p>
-                  </div>
-                  <p className="mt-2 text-sm text-[#6B7280]">
-                    {runState.status === "stopped" && "参加者には表示されていません"}
-                    {runState.status === "question" && `第${broadcastQuiz?.order ?? "-"}問を出題中`}
-                    {runState.status === "answer" && "正解と解説を表示中"}
-                    {runState.status === "paused" && "出題を一時停止しています"}
-                    {runState.status === "finished" && "すべての問題が終了しました"}
-                  </p>
-                  {runState.status === "question" ? (
-                    <p className="mt-2 text-sm font-semibold text-[#7C3AED]">残り時間: {currentProgress.secondsLeft}秒</p>
-                  ) : null}
-                </div>
-                <div className="grid min-w-[200px] shrink-0 grid-cols-2 gap-2">
-                  <div className="rounded-[14px] border border-[#E9D5FF] bg-violet-50/50 p-3 text-center shadow-sm">
-                    <p className="text-[11px] font-semibold text-[#6B7280]">回答数</p>
-                    <p className="text-lg font-bold tabular-nums text-[#111827]">{currentAnswerStats.total}</p>
-                  </div>
-                  <div className="rounded-[14px] border border-[#E9D5FF] bg-violet-50/50 p-3 text-center shadow-sm">
-                    <p className="text-[11px] font-semibold text-[#6B7280]">正解率</p>
-                    <p className="text-lg font-bold tabular-nums text-[#111827]">{currentAnswerStats.correctRate}%</p>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[#111827]">現在の問題</h3>
+              <h3 className="text-sm font-bold text-[#111827]">出題中の問題</h3>
               {broadcastQuiz ? (
-                <div className="mt-3 rounded-[18px] border border-[#E9D5FF] bg-violet-50/40 p-4 shadow-sm">
+                <div
+                  className={`mt-3 rounded-[18px] p-4 shadow-sm ${
+                    runState.status === "question"
+                      ? "border-2 border-[#7C3AED] bg-violet-50/90 shadow-[0_0_24px_rgba(124,58,237,0.25)]"
+                      : "border border-[#E9D5FF] bg-violet-50/40"
+                  }`}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-bold text-[#111827]">第{broadcastQuiz.order}問</p>
-                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-800">
-                      {runState.status === "question" ? "出題中" : runState.status === "answer" ? "答え表示中" : runState.status === "paused" ? "停止中" : "—"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {runState.status === "question" ? (
+                        <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm">
+                          LIVE
+                        </span>
+                      ) : null}
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-800">
+                        {hostPhaseLabel(runState.status, runState.pausedFrom)}
+                      </span>
+                    </div>
                   </div>
                   <p className="mt-2 text-sm font-semibold text-[#111827]">{broadcastQuiz.question}</p>
                   <p className="mt-2 text-xs text-[#6B7280]">
@@ -1311,231 +1345,225 @@ export function QuizAdminPanel({ eventId }: Props) {
                 <div className="mt-3 rounded-[18px] border border-dashed border-[#E9D5FF] bg-zinc-50/80 p-6 text-center text-sm text-[#6B7280]">
                   現在出題中のクイズはありません。
                   <br />
-                  問題作成タブで問題を作成し、クイズ進行から開始してください。
+                  下の「運営手動進行」から問題を公開してください。
                 </div>
               )}
             </section>
 
-            {quizSettings.progressMode === "manual" ? (
-              <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setManualAccordionOpen((o) => !o)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left touch-manipulation"
-                >
-                  <span>
-                    <span className="text-sm font-bold text-[#111827]">運営手動進行</span>
-                    <span className="mt-0.5 block text-xs text-[#6B7280]">ボタンを押して、クイズを手動で進めます。</span>
-                  </span>
-                  <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${manualAccordionOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
-                </button>
-                {manualAccordionOpen ? (
-                  <div className="space-y-4 border-t border-[#E9D5FF] px-4 pb-4 pt-3">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <button
-                        type="button"
-                        disabled={busy || !manualCanPresent || manualAllDisabled}
-                        onClick={() => void manualPresentQuestion()}
-                        className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
-                      >
-                        <span className="text-xs font-bold text-[#7C3AED]">1</span>
-                        <p className="mt-1 text-sm font-bold text-[#111827]">問題提出</p>
-                        <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">参加者に問題を表示</p>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !manualCanShowAnswer || manualAllDisabled}
-                        onClick={() => void manualShowAnswer()}
-                        className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
-                      >
-                        <span className="text-xs font-bold text-[#7C3AED]">2</span>
-                        <p className="mt-1 text-sm font-bold text-[#111827]">答えを表示</p>
-                        <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">答えと解説を表示</p>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !manualCanNext || manualAllDisabled}
-                        onClick={() => void manualPrepareNext()}
-                        className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
-                      >
-                        <span className="text-xs font-bold text-[#7C3AED]">3</span>
-                        <p className="mt-1 text-sm font-bold text-[#111827]">次の問題へ</p>
-                        <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">次の問題に進む</p>
-                      </button>
-                    </div>
-                    <div className="rounded-[14px] border border-[#E9D5FF] bg-zinc-50/80 p-3">
-                      <p className="text-xs font-semibold text-[#111827]">回答時間（問題提出から答え表示まで）</p>
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          className="h-10 w-10 rounded-lg border border-[#E9D5FF] bg-white text-lg font-bold touch-manipulation"
-                          onClick={() => setSettingTimeLimit((v) => String(Math.max(1, Number(v || "20") - 1)))}
-                        >
-                          -
-                        </button>
-                        <span className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{settingTimeLimit}秒</span>
-                        <button
-                          type="button"
-                          className="h-10 w-10 rounded-lg border border-[#E9D5FF] bg-white text-lg font-bold touch-manipulation"
-                          onClick={() => setSettingTimeLimit((v) => String(Math.max(1, Number(v || "20") + 1)))}
-                        >
-                          +
-                        </button>
-                      </div>
-                      <p className="mt-2 text-[11px] text-[#6B7280]">この時間は参加者が回答できる時間です。</p>
-                      <label className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-xs font-semibold text-[#111827]">
-                        <span>時間終了後に自動で答えを表示する</span>
-                        <input
-                          type="checkbox"
-                          checked={settingAutoReveal}
-                          onChange={(e) => void setDoc(
-                            doc(db, "events", eventId),
-                            { quizState: { autoRevealAnswer: e.target.checked }, updatedAt: serverTimestamp() },
-                            { merge: true },
-                          )}
-                        />
-                      </label>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void saveBroadcastSettings()}
-                        className="mt-3 min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
-                      >
-                        手動進行の時間設定を保存
-                      </button>
-                    </div>
+            <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
+              <button
+                type="button"
+                onClick={() => setManualAccordionOpen((o) => !o)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left touch-manipulation"
+              >
+                <span>
+                  <span className="text-sm font-bold text-[#111827]">運営手動進行</span>
+                  <span className="mt-0.5 block text-xs text-[#6B7280]">運営が手動でクイズを進行します</span>
+                </span>
+                <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${manualAccordionOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
+              </button>
+              {manualAccordionOpen ? (
+                <div className="space-y-4 border-t border-[#E9D5FF] px-4 pb-4 pt-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      disabled={busy || !manualCanPublishQuestion || manualAllDisabled}
+                      onClick={() => void manualPublishQuestion()}
+                      className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
+                    >
+                      <span className="text-xs font-bold text-[#7C3AED]">1</span>
+                      <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111827]">
+                        {busyAction === "公開中…" ? <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden /> : null}
+                        問題公開
+                      </p>
+                      <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">参加者に問題を表示し、回答を受け付けます</p>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !manualCanShowAnswer || manualAllDisabled}
+                      onClick={() => void manualShowAnswer()}
+                      className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
+                    >
+                      <span className="text-xs font-bold text-[#7C3AED]">2</span>
+                      <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111827]">
+                        {busyAction === "答えを表示中…" ? <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden /> : null}
+                        答え表示
+                      </p>
+                      <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">正解と解説を表示します</p>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !manualCanPublishNext || manualAllDisabled}
+                      onClick={() => void manualPublishNext()}
+                      className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
+                    >
+                      <span className="text-xs font-bold text-[#7C3AED]">3</span>
+                      <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111827]">
+                        {busyAction === "次を公開中…" || busyAction === "終了処理中…" ? (
+                          <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden />
+                        ) : null}
+                        次を公開
+                      </p>
+                      <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">次の問題を公開し、すぐに回答受付を開始します</p>
+                    </button>
                   </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {quizSettings.progressMode === "auto" ? (
-              <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setAutoAccordionOpen((o) => !o)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left touch-manipulation"
-                >
-                  <span>
-                    <span className="text-sm font-bold text-[#111827]">自動進行</span>
-                    <span className="mt-0.5 block text-xs text-[#6B7280]">
-                      開始すると、問題提出・回答時間・答え表示・次の問題へを自動で行います。
-                    </span>
-                  </span>
-                  <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${autoAccordionOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
-                </button>
-                {autoAccordionOpen ? (
-                  <div className="space-y-4 border-t border-[#E9D5FF] px-4 pb-4 pt-3">
-                    <div className="flex flex-wrap gap-2">
+                  <div className="rounded-[14px] border border-[#E9D5FF] bg-zinc-50/80 p-3">
+                    <p className="text-xs font-semibold text-[#111827]">回答時間（問題公開から答え表示まで）</p>
+                    <div className="mt-2 flex items-center gap-2">
                       <button
                         type="button"
-                        disabled={busy || runState.autoAdvanceRunning}
-                        onClick={() => void startAutoAdvance()}
-                        className="min-h-[48px] flex-1 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
+                        className="h-10 w-10 rounded-lg border border-[#E9D5FF] bg-white text-lg font-bold touch-manipulation"
+                        onClick={() => setSettingTimeLimit((v) => String(Math.max(1, Number(v || "20") - 1)))}
                       >
-                        自動進行を開始
+                        -
                       </button>
+                      <span className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{settingTimeLimit}秒</span>
                       <button
                         type="button"
-                        disabled={busy || !runState.autoAdvanceRunning}
-                        onClick={() => void stopAutoAdvance()}
-                        className="min-h-[48px] rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] touch-manipulation disabled:opacity-45"
+                        className="h-10 w-10 rounded-lg border border-[#E9D5FF] bg-white text-lg font-bold touch-manipulation"
+                        onClick={() => setSettingTimeLimit((v) => String(Math.max(1, Number(v || "20") + 1)))}
                       >
-                        停止
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !runState.autoAdvanceRunning}
-                        onClick={() => void pauseLive()}
-                        className="min-h-[48px] rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] touch-manipulation disabled:opacity-45"
-                      >
-                        一時停止
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy || !runState.autoAdvanceRunning}
-                        onClick={() => void resumeAutoAdvance()}
-                        className="min-h-[48px] rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] touch-manipulation disabled:opacity-45"
-                      >
-                        再開
+                        +
                       </button>
                     </div>
-                    <div className="grid gap-3 rounded-[14px] border border-[#E9D5FF] bg-zinc-50/80 p-3 sm:grid-cols-2">
-                      <div>
-                        <p className="text-xs font-semibold text-[#111827]">1. 回答時間（秒）</p>
-                        <input
-                          type="number"
-                          min={1}
-                          value={settingTimeLimit}
-                          onChange={(e) => setSettingTimeLimit(e.target.value)}
-                          className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#111827]">2. 答え表示時間（秒）</p>
-                        <input
-                          type="number"
-                          min={1}
-                          value={settingAnswerDisplay}
-                          onChange={(e) => setSettingAnswerDisplay(e.target.value)}
-                          className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#111827]">3. 次の問題までの待機（秒）</p>
-                        <input
-                          type="number"
-                          min={0}
-                          value={settingNextDelay}
-                          onChange={(e) => setSettingNextDelay(e.target.value)}
-                          className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-[#111827]">4. 出題順</p>
-                        <select
-                          value={settingOrderMode}
-                          onChange={(e) => setSettingOrderMode(e.target.value as OrderMode)}
-                          className="mt-1 min-h-[44px] w-full rounded-xl border border-[#E9D5FF] bg-white px-3 text-sm"
-                        >
-                          <option value="fixed">作成順</option>
-                          <option value="random">ランダム</option>
-                        </select>
-                      </div>
-                      <label className="flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 sm:col-span-2">
-                        <span className="text-xs font-semibold text-[#111827]">5. 最後まで進んだら自動終了</span>
-                        <input type="checkbox" checked={settingAutoFinish} onChange={(e) => setSettingAutoFinish(e.target.checked)} />
-                      </label>
-                    </div>
-                    <p className="text-center text-[11px] text-[#6B7280]">自動進行の流れ：問題提出 → 回答時間 → 答え表示 → 次の問題へ</p>
+                    <p className="mt-2 text-[11px] text-[#6B7280]">この時間は参加者が回答できる時間です（サーバー時刻基準で締め切ります）。</p>
+                    <label className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-xs font-semibold text-[#111827]">
+                      <span>時間終了後に自動で答え表示へ切り替える</span>
+                      <input
+                        type="checkbox"
+                        checked={settingAutoReveal}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          void (async () => {
+                            try {
+                              await syncQuizRunMirror({ autoRevealAnswer: checked }, { autoRevealAnswer: checked });
+                            } catch (err) {
+                              console.error(err);
+                              setMessage("設定の更新に失敗しました。");
+                            }
+                          })();
+                        }}
+                      />
+                    </label>
                     <button
                       type="button"
                       disabled={busy}
                       onClick={() => void saveBroadcastSettings()}
-                      className="min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white disabled:opacity-50 touch-manipulation"
+                      className="mt-3 min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
                     >
-                      自動進行の設定を保存
+                      {busyAction === "設定を保存中…" ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" aria-hidden /> : null}
+                      手動進行の時間設定を保存
                     </button>
                   </div>
-                ) : null}
-              </section>
-            ) : null}
+                </div>
+              ) : null}
+            </section>
+
+            <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
+              <button
+                type="button"
+                onClick={() => setAutoAccordionOpen((o) => !o)}
+                className="flex w-full items-center justify-between px-4 py-3 text-left touch-manipulation"
+              >
+                <span>
+                  <span className="text-sm font-bold text-[#111827]">自動進行</span>
+                  <span className="mt-0.5 block text-xs text-[#6B7280]">
+                    問題公開 → 回答時間 → 答え表示 → 次を公開、を自動で繰り返します。
+                  </span>
+                </span>
+                <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${autoAccordionOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
+              </button>
+              {autoAccordionOpen ? (
+                <div className="space-y-4 border-t border-[#E9D5FF] px-4 pb-4 pt-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || runState.autoAdvanceRunning}
+                      onClick={() => void startAutoAdvance()}
+                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
+                    >
+                      {busyAction === "自動開始中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                      自動開始
+                    </button>
+                  </div>
+                  <p className="text-center text-[11px] text-[#6B7280]">停止は画面上部の「停止」ボタンから行えます（自動を止めて手動待機に戻ります）。</p>
+                  <div className="grid gap-3 rounded-[14px] border border-[#E9D5FF] bg-zinc-50/80 p-3 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-semibold text-[#111827]">1. 回答時間（秒）</p>
+                      <input
+                        type="number"
+                        min={1}
+                        value={settingTimeLimit}
+                        onChange={(e) => setSettingTimeLimit(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#111827]">2. 答え表示時間（秒）</p>
+                      <input
+                        type="number"
+                        min={1}
+                        value={settingAnswerDisplay}
+                        onChange={(e) => setSettingAnswerDisplay(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#111827]">3. 次の問題までの待機（秒）</p>
+                      <input
+                        type="number"
+                        min={0}
+                        value={settingNextDelay}
+                        onChange={(e) => setSettingNextDelay(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-[#111827]">4. 出題順</p>
+                      <select
+                        value={settingOrderMode}
+                        onChange={(e) => setSettingOrderMode(e.target.value as OrderMode)}
+                        className="mt-1 min-h-[44px] w-full rounded-xl border border-[#E9D5FF] bg-white px-3 text-sm"
+                      >
+                        <option value="fixed">作成順</option>
+                        <option value="random">ランダム</option>
+                      </select>
+                    </div>
+                    <label className="flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 sm:col-span-2">
+                      <span className="text-xs font-semibold text-[#111827]">5. 最後まで進んだら自動終了</span>
+                      <input type="checkbox" checked={settingAutoFinish} onChange={(e) => setSettingAutoFinish(e.target.checked)} />
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void saveBroadcastSettings()}
+                    className="min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white disabled:opacity-50 touch-manipulation"
+                  >
+                    自動進行の設定を保存
+                  </button>
+                </div>
+              ) : null}
+            </section>
           </div>
 
           <aside className="order-last space-y-3 lg:order-none">
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[#111827]">進行モードについて</h3>
+              <h3 className="text-sm font-bold text-[#111827]">手動の流れ</h3>
               <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
-                <span className="font-semibold text-[#111827]">運営手動進行：</span>
-                運営者がボタンを押して、「問題提出 → 答え表示 → 次の問題へ」を手動で操作します。
-              </p>
-              <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
-                <span className="font-semibold text-[#111827]">自動進行：</span>
-                開始ボタンを押すだけで、問題提出・回答時間・答え表示・次の問題へを自動で行います。
+                <span className="font-semibold text-[#111827]">問題公開</span> → <span className="font-semibold text-[#111827]">答え表示</span> →{" "}
+                <span className="font-semibold text-[#111827]">次を公開</span>
+                を繰り返します。「次を公開」で次の問題の公開と回答受付が一度に始まります。
               </p>
             </section>
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-              <h3 className="text-sm font-bold text-[#111827]">現在の状態について</h3>
+              <h3 className="text-sm font-bold text-[#111827]">自動の流れ</h3>
+              <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
+                問題公開 → 回答時間 → 答え表示 → 次を公開、をループします。停止は画面上部の「停止」だけです（手動待機に戻ります）。
+              </p>
+            </section>
+            <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold text-[#111827]">状態の意味</h3>
               <ul className="mt-2 space-y-1.5 text-xs text-[#6B7280]">
                 <li>
                   <span className="font-semibold text-[#111827]">停止中：</span>出題していません
@@ -1545,9 +1573,6 @@ export function QuizAdminPanel({ eventId }: Props) {
                 </li>
                 <li>
                   <span className="font-semibold text-[#111827]">答え表示中：</span>答えと解説を表示中
-                </li>
-                <li>
-                  <span className="font-semibold text-[#111827]">一時停止中：</span>出題を一時停止しています
                 </li>
                 <li>
                   <span className="font-semibold text-[#111827]">終了：</span>すべての問題が終了しました
@@ -1597,8 +1622,7 @@ export function QuizAdminPanel({ eventId }: Props) {
         <h3 className="text-sm font-bold text-[#111827]">画面の流れ</h3>
         <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-[#6B7280]">
           <li>問題作成タブで問題を作る</li>
-          <li>クイズ進行タブで進行モードを選ぶ</li>
-          <li>手動または自動でクイズを進める</li>
+          <li>クイズ進行タブで「問題公開」から進行する（または自動開始）</li>
           <li>結果一覧タブで結果を確認</li>
         </ol>
       </section>
@@ -1623,9 +1647,10 @@ export function QuizAdminPanel({ eventId }: Props) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-600">ステータス</label>
-                  <select value={draftStatus} onChange={(e) => setDraftStatus(e.target.value as AdminDraftStatus)} className="mt-0.5 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm">
-                    <option value="draft">下書き</option><option value="unasked">未出題</option><option value="private">非公開</option>
+                  <label className="block text-xs font-semibold text-zinc-600">公開状態</label>
+                  <select value={publishVisibility} onChange={(e) => setPublishVisibility(e.target.value as BankVisibility)} className="mt-0.5 w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm">
+                    <option value="public">公開</option>
+                    <option value="private">下書き</option>
                   </select>
                 </div>
               </div>

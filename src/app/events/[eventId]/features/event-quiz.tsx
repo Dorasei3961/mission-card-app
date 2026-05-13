@@ -19,7 +19,7 @@ import { auth, db } from "../../../lib/firebase";
 import { clearEventScopedStorage, getEventSession, setEventSession } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { normalizeQuizFromFirestore, type QuizDoc } from "../../../lib/quiz-schema";
-import { normalizeQuizStateFromFirestore, type QuizRunStatus } from "../../../lib/quiz-run-state";
+import { normalizeEventQuizState, type QuizRunStatus } from "../../../lib/quiz-run-state";
 import { CheckCircle2, CircleDot, Clock, HelpCircle, Pause } from "lucide-react";
 
 type Props = { eventId: string };
@@ -44,6 +44,7 @@ export function EventQuiz({ eventId }: Props) {
     activeQuizRef.current = activeQuiz;
   }, [activeQuiz]);
   const [runStatus, setRunStatus] = useState<QuizRunStatus>("stopped");
+  const [questionDeadlineMs, setQuestionDeadlineMs] = useState<number | null>(null);
   /** 確定した回答の選択肢インデックス（Firestore と同期） */
   const [answeredIndex, setAnsweredIndex] = useState<number | null>(null);
   /** 送信前に選択中のインデックス */
@@ -134,9 +135,15 @@ export function EventQuiz({ eventId }: Props) {
     if (!ready || !canPlay) return;
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) return;
-      const data = snap.data() as { quizState?: Record<string, unknown>; features?: unknown; status?: string };
+      const data = snap.data() as {
+        quizState?: Record<string, unknown>;
+        quizRunState?: Record<string, unknown>;
+        features?: unknown;
+        status?: string;
+      };
       const qs = data.quizState;
-      const normalized = normalizeQuizStateFromFirestore(qs);
+      const normalized = normalizeEventQuizState(data);
+      setQuestionDeadlineMs(normalized.questionDeadlineAt?.toMillis() ?? null);
       const qsEmpty = !qs || (typeof qs === "object" && Object.keys(qs).length === 0);
       if (qsEmpty && activeQuizRef.current) {
         setRunStatus("question");
@@ -190,10 +197,11 @@ export function EventQuiz({ eventId }: Props) {
   }, [eventId, authUid, activeQuiz?.id]);
 
   const deadlineMs = useMemo(() => {
+    if (questionDeadlineMs != null) return questionDeadlineMs;
     if (!activeQuiz?.timeLimit || !activeQuiz.activatedAt) return null;
     const start = activeQuiz.activatedAt.toMillis?.() ?? 0;
     return start + activeQuiz.timeLimit * 1000;
-  }, [activeQuiz]);
+  }, [activeQuiz, questionDeadlineMs]);
 
   useEffect(() => {
     if (!deadlineMs || eventClosed || runStatus !== "question") {
