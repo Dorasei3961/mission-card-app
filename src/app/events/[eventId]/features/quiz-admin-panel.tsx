@@ -25,6 +25,7 @@ import {
   Pencil,
   Play,
   Plus,
+  RotateCcw,
   Search,
   ArrowUp,
   ArrowDown,
@@ -117,6 +118,14 @@ function resequenceQuizzes(items: AdminQuiz[]): AdminQuiz[] {
   return [...items]
     .sort(sortByOrder)
     .map((quiz, idx) => ({ ...quiz, order: idx + 1 }));
+}
+
+function normalizeParticipantKey(name: string): string {
+  const normalized = name
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  return normalized || "guest";
 }
 
 function fmtTs(ts: Timestamp | null): string {
@@ -514,6 +523,103 @@ export function QuizAdminPanel({ eventId }: Props) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const resetQuizAnswersForReplay = async (quiz: AdminQuiz) => {
+    const [answerSnap, pointLogSnap, participantSnap] = await Promise.all([
+      getDocs(collection(db, "events", eventId, "quizAnswers")),
+      getDocs(collection(db, "events", eventId, "pointLogs")),
+      getDocs(collection(db, "events", eventId, "participants")),
+    ]);
+
+    const answerDocs = answerSnap.docs.filter((snap) => snap.data().quizId === quiz.id);
+    const pointLogDocs = pointLogSnap.docs.filter((snap) => {
+      const raw = snap.data() as { type?: unknown; quizId?: unknown };
+      return raw.type === "quiz" && raw.quizId === quiz.id;
+    });
+
+    const participantDocsById = new Map(participantSnap.docs.map((snap) => [snap.id, snap] as const));
+    const participantDocsByName = new Map(
+      participantSnap.docs.map((snap) => {
+        const raw = snap.data() as { name?: unknown };
+        const name = typeof raw.name === "string" ? raw.name.trim() : "";
+        return [name, snap] as const;
+      }),
+    );
+
+    const pointAdjustments = new Map<string, { authUid: string; pointDelta: number }>();
+    pointLogDocs.forEach((snap) => {
+      const raw = snap.data() as {
+        uid?: unknown;
+        participantName?: unknown;
+        point?: unknown;
+      };
+      const authUid = typeof raw.uid === "string" ? raw.uid : "";
+      const participantName = typeof raw.participantName === "string" ? raw.participantName.trim() : "";
+      const point = typeof raw.point === "number" && Number.isFinite(raw.point) ? raw.point : 0;
+      if (point <= 0) return;
+
+      const participantDoc =
+        participantDocsById.get(authUid) ??
+        participantDocsById.get(normalizeParticipantKey(participantName)) ??
+        participantDocsByName.get(participantName);
+      if (!participantDoc) return;
+
+      const prev = pointAdjustments.get(participantDoc.id);
+      pointAdjustments.set(participantDoc.id, {
+        authUid,
+        pointDelta: (prev?.pointDelta ?? 0) + point,
+      });
+    });
+
+    const batch = writeBatch(db);
+    answerDocs.forEach((snap) => batch.delete(snap.ref));
+    pointLogDocs.forEach((snap) => batch.delete(snap.ref));
+
+    for (const [participantDocId, adj] of pointAdjustments.entries()) {
+      const participantSnapDoc = participantDocsById.get(participantDocId);
+      const participantData = participantSnapDoc?.data() as {
+        quizPoints?: unknown;
+        bingoPoints?: unknown;
+      } | undefined;
+      const currentQuizPoints =
+        typeof participantData?.quizPoints === "number" && Number.isFinite(participantData.quizPoints)
+          ? participantData.quizPoints
+          : 0;
+      const bingoPoints =
+        typeof participantData?.bingoPoints === "number" && Number.isFinite(participantData.bingoPoints)
+          ? participantData.bingoPoints
+          : 0;
+      const missionProgressSnap = await getDoc(doc(db, "events", eventId, "missionProgress", participantDocId));
+      const missionTotalRaw = missionProgressSnap.data()?.totalPoints;
+      const missionTotal =
+        typeof missionTotalRaw === "number" && Number.isFinite(missionTotalRaw) ? missionTotalRaw : 0;
+      const nextQuizPoints = Math.max(0, currentQuizPoints - adj.pointDelta);
+      const nextTotalPoints = missionTotal + bingoPoints + nextQuizPoints;
+
+      batch.set(
+        doc(db, "events", eventId, "participants", participantDocId),
+        {
+          quizPoints: nextQuizPoints,
+          totalPoints: nextTotalPoints,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      if (adj.authUid) {
+        batch.set(
+          doc(db, "users", adj.authUid),
+          {
+            totalPoints: nextTotalPoints,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+    }
+
+    await batch.commit();
   };
 
   const compactQuizOrders = async () => {
@@ -1066,6 +1172,16 @@ export function QuizAdminPanel({ eventId }: Props) {
           ? "終了"
           : "停止中";
   const [displaySecondsLeft, setDisplaySecondsLeft] = useState<number | null>(null);
+  const replayQuiz = useMemo(() => {
+    if (runState.currentQuestionId) {
+      return quizzes.find((quiz) => quiz.id === runState.currentQuestionId) ?? null;
+    }
+    const latestActivated = [...quizzes]
+      .filter((quiz) => quiz.activatedAt)
+      .sort((a, b) => (b.activatedAt?.toMillis?.() ?? 0) - (a.activatedAt?.toMillis?.() ?? 0))[0];
+    return latestActivated ?? null;
+  }, [quizzes, runState.currentQuestionId]);
+  const canReplay = !!replayQuiz && runState.status !== "finished";
 
   useEffect(() => {
     if (runState.status === "question") {
@@ -1084,6 +1200,49 @@ export function QuizAdminPanel({ eventId }: Props) {
     setDisplaySecondsLeft(null);
     return undefined;
   }, [runState.status, runState.answerStartedAt, runState.answerDisplaySeconds, currentProgress.secondsLeft]);
+
+  const replayCurrentQuiz = async () => {
+    if (busy || !canReplay || !replayQuiz) return;
+    setBusy(true);
+    setBusyAction("もう一度を準備中…");
+    setMessage("");
+    try {
+      await resetQuizAnswersForReplay(replayQuiz);
+
+      const evSnap = await getDoc(doc(db, "events", eventId));
+      const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+      const primed = mergeQuizStatePatch(prev, {
+        autoAdvanceRunning: true,
+        betweenStartedAt: null,
+        answerStartedAt: null,
+        questionDeadlineAt: null,
+      });
+      await setDoc(
+        doc(db, "events", eventId),
+        {
+          quizSettings: { progressMode: "auto" },
+          quizState: {
+            autoAdvanceRunning: true,
+            betweenStartedAt: null,
+            answerStartedAt: null,
+            questionDeadlineAt: null,
+          },
+          quizRunState: buildQuizRunStateMirror("auto", primed),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      await activateQuiz(replayQuiz, { fromAuto: true });
+      setMessage(`第${replayQuiz.order}問をもう一度開始しました。`);
+    } catch (e) {
+      console.error(e);
+      setMessage("もう一度の実行に失敗しました。");
+    } finally {
+      setBusy(false);
+      setBusyAction(null);
+    }
+  };
 
   return (
     <div className="space-y-4 pb-32 text-[#111827]">
@@ -1338,6 +1497,15 @@ export function QuizAdminPanel({ eventId }: Props) {
               >
                 {busyAction === "自動開始中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
                 自動開始
+              </button>
+              <button
+                type="button"
+                disabled={busy || !canReplay}
+                onClick={() => void replayCurrentQuiz()}
+                className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[16px] border border-[#C4B5FD] bg-white px-5 text-base font-bold text-[#7C3AED] shadow-sm disabled:opacity-50 touch-manipulation"
+              >
+                {busyAction === "もう一度を準備中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <RotateCcw className="h-5 w-5" aria-hidden />}
+                もう一度
               </button>
               <button
                 type="button"
