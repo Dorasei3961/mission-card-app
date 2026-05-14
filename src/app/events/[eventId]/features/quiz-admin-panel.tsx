@@ -19,7 +19,6 @@ import {
   BarChart3,
   ChevronRight,
   CircleDot,
-  Clock3,
   Copy,
   GripVertical,
   Loader2,
@@ -125,20 +124,6 @@ function fmtTs(ts: Timestamp | null): string {
   return ts.toDate().toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-/** 主催者向け：停止中 / 出題中 / 答え表示中 / 終了（旧 paused は pausedFrom で寄せる） */
-function hostPhaseLabel(status: NormalizedQuizState["status"], pausedFrom: NormalizedQuizState["pausedFrom"]): string {
-  if (status === "stopped") return "停止中";
-  if (status === "question") return "出題中";
-  if (status === "answer") return "答え表示中";
-  if (status === "finished") return "終了";
-  if (status === "paused") {
-    if (pausedFrom === "answer") return "答え表示中";
-    if (pausedFrom === "question") return "出題中";
-    return "停止中";
-  }
-  return "停止中";
-}
-
 function hostPhaseMeta(status: NormalizedQuizState["status"], pausedFrom: NormalizedQuizState["pausedFrom"]): {
   label: string;
   cardClass: string;
@@ -192,6 +177,7 @@ export function QuizAdminPanel({ eventId }: Props) {
   const [searchText, setSearchText] = useState("");
   const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
   const [resultOrder, setResultOrder] = useState<ResultOrder>("latest");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [runState, setRunState] = useState<NormalizedQuizState>(() => normalizeEventQuizState(undefined));
   const [quizSettings, setQuizSettings] = useState<QuizSettings>({ progressMode: "manual" });
@@ -1071,6 +1057,33 @@ export function QuizAdminPanel({ eventId }: Props) {
 
   const autoRunning = runState.autoAdvanceRunning && quizSettings.progressMode === "auto";
   const autoStatusMeta = hostPhaseMeta(runState.status, runState.pausedFrom);
+  const operatorStatusLabel =
+    runState.status === "question"
+      ? "回答受付中"
+      : runState.status === "answer"
+        ? "答え表示中"
+        : runState.status === "finished"
+          ? "終了"
+          : "停止中";
+  const [displaySecondsLeft, setDisplaySecondsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (runState.status === "question") {
+      setDisplaySecondsLeft(currentProgress.secondsLeft);
+      return undefined;
+    }
+    if (runState.status === "answer" && runState.answerStartedAt) {
+      const tick = () => {
+        const deadlineMs = runState.answerStartedAt!.toMillis() + runState.answerDisplaySeconds * 1000;
+        setDisplaySecondsLeft(Math.max(0, Math.ceil((deadlineMs - Date.now()) / 1000)));
+      };
+      tick();
+      const id = window.setInterval(tick, 500);
+      return () => window.clearInterval(id);
+    }
+    setDisplaySecondsLeft(null);
+    return undefined;
+  }, [runState.status, runState.answerStartedAt, runState.answerDisplaySeconds, currentProgress.secondsLeft]);
 
   return (
     <div className="space-y-4 pb-32 text-[#111827]">
@@ -1303,199 +1316,111 @@ export function QuizAdminPanel({ eventId }: Props) {
       {adminTab === "run" ? (
         <div className="space-y-4 pb-6">
           <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-[#111827]">自動進行</h2>
-                <p className="mt-1 text-sm text-[#6B7280]">
-                  開始すると、問題公開・回答時間・答え表示・次の問題へを自動で行います。
-                </p>
-              </div>
-            </div>
+            <p className="text-sm font-semibold text-[#6B7280]">
+              {broadcastQuiz ? `第${broadcastQuiz.order}問` : "第—問"}
+            </p>
+            <p className={`mt-3 text-3xl font-black ${autoStatusMeta.dotClass.replace("bg-", "text-")}`}>
+              {operatorStatusLabel}
+            </p>
+            <p className="mt-3 text-2xl font-bold tabular-nums text-[#111827]">
+              残り{displaySecondsLeft != null ? `${displaySecondsLeft}秒` : "—秒"}
+            </p>
+          </section>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-violet-600">進行方式</p>
-                <div className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#7C3AED] bg-[#7C3AED] px-4 py-2 text-sm font-bold text-white shadow-sm">
-                  <span className="h-2.5 w-2.5 rounded-full bg-white" aria-hidden />
-                  自動進行
-                </div>
-                <div className="flex flex-col gap-2 pt-2 sm:flex-row">
-                  <button
-                    type="button"
-                    disabled={busy || autoRunning}
-                    onClick={() => void startAutoAdvance()}
-                    className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation sm:w-auto"
-                  >
-                    {busyAction === "自動開始中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                    自動開始
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !autoRunning}
-                    onClick={() => void stopAll()}
-                    className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 shadow-sm disabled:opacity-50 touch-manipulation sm:w-auto"
-                  >
-                    {busyAction === "停止中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                    停止
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-violet-600">現在の状態</p>
-                <span
-                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border px-4 py-2 text-sm font-bold shadow-sm ${autoStatusMeta.cardClass}`}
-                >
-                  <span className={`h-2.5 w-2.5 rounded-full ${autoStatusMeta.dotClass}`} aria-hidden />
-                  {autoStatusMeta.label}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 space-y-2 rounded-[16px] border border-[#E9D5FF] bg-[#FAF5FF] px-4 py-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
-                <Clock3 className="h-3.5 w-3.5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
-                <span>
-                  自動進行の間隔：回答{runState.timeLimitSeconds}秒 / 答え表示{runState.answerDisplaySeconds}秒 / 次まで{runState.nextDelaySeconds}秒
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
-                <Play className="h-3.5 w-3.5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
-                <span>
-                  次の問題へ自動で進みます
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 rounded-[16px] border border-[#E9D5FF] bg-zinc-50/80 p-4">
-              <div className="flex items-start gap-2 text-xs text-[#6B7280]">
-                <Play className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#7C3AED]" strokeWidth={2} aria-hidden />
-                <p className="leading-relaxed">
-                  問題公開 → 回答時間 → 答え表示 → 次の問題へ、を自動で繰り返し、最後まで進んだら終了します。
-                </p>
-              </div>
-              <div className="mt-4 grid gap-3 rounded-[14px] border border-[#E9D5FF] bg-white p-3 sm:grid-cols-2">
-                    <div>
-                      <p className="text-xs font-semibold text-[#111827]">1. 回答時間（秒）</p>
-                      <input
-                        type="number"
-                        min={1}
-                        value={settingTimeLimit}
-                        onChange={(e) => setSettingTimeLimit(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#111827]">2. 答え表示時間（秒）</p>
-                      <input
-                        type="number"
-                        min={1}
-                        value={settingAnswerDisplay}
-                        onChange={(e) => setSettingAnswerDisplay(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#111827]">3. 次の問題までの待機（秒）</p>
-                      <input
-                        type="number"
-                        min={0}
-                        value={settingNextDelay}
-                        onChange={(e) => setSettingNextDelay(e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-[#111827]">4. 出題順</p>
-                      <select
-                        value={settingOrderMode}
-                        onChange={(e) => setSettingOrderMode(e.target.value as OrderMode)}
-                        className="mt-1 min-h-[44px] w-full rounded-xl border border-[#E9D5FF] bg-white px-3 text-sm"
-                      >
-                        <option value="fixed">作成順</option>
-                        <option value="random">ランダム</option>
-                      </select>
-                    </div>
-                    <label className="flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 sm:col-span-2">
-                      <span className="text-xs font-semibold text-[#111827]">5. 最後まで進んだら自動終了</span>
-                      <input type="checkbox" checked={settingAutoFinish} onChange={(e) => setSettingAutoFinish(e.target.checked)} />
-                    </label>
-              </div>
+          <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
+            <h3 className="text-lg font-bold text-[#111827]">操作ボタン</h3>
+            <div className="mt-4 flex flex-col gap-3">
               <button
                 type="button"
-                disabled={busy}
-                onClick={() => void saveBroadcastSettings()}
-                className="mt-4 min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white disabled:opacity-50 touch-manipulation"
+                disabled={busy || autoRunning}
+                onClick={() => void startAutoAdvance()}
+                className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-[#7C3AED] to-[#A78BFA] px-5 text-base font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
               >
-                {busyAction === "設定を保存中…" ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" aria-hidden /> : null}
-                自動進行の設定を保存
+                {busyAction === "自動開始中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
+                自動開始
+              </button>
+              <button
+                type="button"
+                disabled={busy || !autoRunning}
+                onClick={() => void stopAll()}
+                className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[16px] border border-red-200 bg-white px-5 text-base font-bold text-red-700 shadow-sm disabled:opacity-50 touch-manipulation"
+              >
+                {busyAction === "停止中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
+                停止
               </button>
             </div>
           </section>
 
           <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
-            <h3 className="text-lg font-bold text-[#111827]">現在出題中の問題</h3>
-            <p className="mt-1 text-sm text-[#6B7280]">参加者に現在表示されている問題の状況です。</p>
-            {broadcastQuiz ? (
-              <div className="mt-4 rounded-[16px] border border-[#C4B5FD] bg-violet-50/80 p-5 shadow-sm">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-bold text-[#111827]">第{broadcastQuiz.order}問</p>
-                  {runState.status === "question" ? (
-                    <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-white shadow-sm">
-                      LIVE
-                    </span>
-                  ) : null}
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${hostPhaseMeta(runState.status, runState.pausedFrom).cardClass}`}>
-                    {hostPhaseMeta(runState.status, runState.pausedFrom).label.replace("（回答受付中）", "")}
-                  </span>
-                </div>
-                <p className="mt-4 text-lg font-bold leading-snug text-[#111827]">{broadcastQuiz.question}</p>
-                <p className="mt-3 text-sm leading-relaxed text-[#6B7280]">
-                  A. {broadcastQuiz.choices[0]}　B. {broadcastQuiz.choices[1]}　C. {broadcastQuiz.choices[2]}　D. {broadcastQuiz.choices[3]}
-                </p>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between text-left touch-manipulation"
+            >
+              <span className="text-base font-bold text-[#111827]">詳細設定</span>
+              <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${settingsOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
+            </button>
 
-                <div className="mt-4 grid grid-cols-3 gap-2 overflow-x-auto text-center">
-                  <div className="min-w-0 rounded-xl border border-[#E9D5FF] bg-white px-2 py-3 shadow-sm">
-                    <p className="text-[11px] text-[#6B7280]">回答者数</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-[#111827]">{broadcastQuiz.totalAnswers}</p>
-                    <p className="text-[11px] text-[#6B7280]">人</p>
+            {settingsOpen ? (
+              <div className="mt-4 space-y-4 border-t border-[#E9D5FF] pt-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs font-semibold text-[#111827]">回答時間</p>
+                    <input
+                      type="number"
+                      min={1}
+                      value={settingTimeLimit}
+                      onChange={(e) => setSettingTimeLimit(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
+                    />
                   </div>
-                  <div className="min-w-0 rounded-xl border border-[#E9D5FF] bg-white px-2 py-3 shadow-sm">
-                    <p className="text-[11px] text-[#6B7280]">正解者数</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-[#111827]">{broadcastQuiz.correctAnswers}</p>
-                    <p className="text-[11px] text-[#6B7280]">人</p>
+                  <div>
+                    <p className="text-xs font-semibold text-[#111827]">答え表示時間</p>
+                    <input
+                      type="number"
+                      min={1}
+                      value={settingAnswerDisplay}
+                      onChange={(e) => setSettingAnswerDisplay(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
+                    />
                   </div>
-                  <div className="min-w-0 rounded-xl border border-[#E9D5FF] bg-white px-2 py-3 shadow-sm">
-                    <p className="text-[11px] text-[#6B7280]">正解率</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-[#111827]">{broadcastQuiz.correctRate}%</p>
-                    <p className="text-[11px] text-[#6B7280]">%</p>
+                  <div>
+                    <p className="text-xs font-semibold text-[#111827]">次までの待機</p>
+                    <input
+                      type="number"
+                      min={0}
+                      value={settingNextDelay}
+                      onChange={(e) => setSettingNextDelay(e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-sm"
+                    />
                   </div>
+                  <div>
+                    <p className="text-xs font-semibold text-[#111827]">出題順</p>
+                    <select
+                      value={settingOrderMode}
+                      onChange={(e) => setSettingOrderMode(e.target.value as OrderMode)}
+                      className="mt-1 min-h-[44px] w-full rounded-xl border border-[#E9D5FF] bg-white px-3 text-sm"
+                    >
+                      <option value="fixed">作成順</option>
+                      <option value="random">ランダム</option>
+                    </select>
+                  </div>
+                  <label className="flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 sm:col-span-2">
+                    <span className="text-xs font-semibold text-[#111827]">最後で自動終了</span>
+                    <input type="checkbox" checked={settingAutoFinish} onChange={(e) => setSettingAutoFinish(e.target.checked)} />
+                  </label>
                 </div>
-
-                {runState.status === "question" ? (
-                  <div className="mt-4">
-                    <p className="text-sm font-semibold text-[#6B7280]">
-                      残り時間 {currentProgress.secondsLeft}秒 / {currentProgress.total}秒
-                    </p>
-                    <div className="mt-2 h-2 rounded-full bg-[#E5E7EB]">
-                      <div className="h-2 rounded-full bg-[#7C3AED]" style={{ width: `${currentProgress.ratio}%` }} />
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="mt-4 rounded-[14px] border border-[#DDD6FE] bg-violet-100/60 px-4 py-3 text-xs font-semibold text-[#6D28D9]">
-                  {runState.status === "question"
-                    ? "この問題が参加者画面にライブ表示されています"
-                    : "この問題の状態が参加者画面に表示されています"}
-                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void saveBroadcastSettings()}
+                  className="min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white disabled:opacity-50 touch-manipulation"
+                >
+                  {busyAction === "設定を保存中…" ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" aria-hidden /> : null}
+                  設定を保存
+                </button>
               </div>
-            ) : (
-              <div className="mt-4 rounded-[18px] border border-dashed border-[#E9D5FF] bg-zinc-50/80 p-6 text-center text-sm text-[#6B7280]">
-                現在出題中のクイズはありません。
-                <br />
-                上の進行コントロールから問題を公開してください。
-              </div>
-            )}
+            ) : null}
           </section>
 
           <ParticipantPreview
@@ -1542,14 +1467,16 @@ export function QuizAdminPanel({ eventId }: Props) {
         </div>
       ) : null}
 
-      <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
-        <h3 className="text-sm font-bold text-[#111827]">画面の流れ</h3>
-        <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-[#6B7280]">
-          <li>問題作成タブで問題を作る</li>
-          <li>クイズ進行タブで「問題公開」から進行する（または自動開始）</li>
-          <li>結果一覧タブで結果を確認</li>
-        </ol>
-      </section>
+      {adminTab !== "run" ? (
+        <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-bold text-[#111827]">画面の流れ</h3>
+          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-[#6B7280]">
+            <li>問題作成タブで問題を作る</li>
+            <li>クイズ進行タブで「問題公開」から進行する（または自動開始）</li>
+            <li>結果一覧タブで結果を確認</li>
+          </ol>
+        </section>
+      ) : null}
 
       {message ? <p className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">{message}</p> : null}
 
