@@ -174,7 +174,7 @@ export function EventQuiz({ eventId }: Props) {
     setDraftChoice(null);
     setAnsweredIndex(null);
     setResult(null);
-  }, [activeQuiz?.id]);
+  }, [activeQuiz?.id, activeQuiz?.activatedAt?.toMillis?.()]);
 
   useEffect(() => {
     if (!authUid || !activeQuiz) {

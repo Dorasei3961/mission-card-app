@@ -891,21 +891,36 @@ export function QuizAdminPanel({ eventId }: Props) {
     try {
       const evSnap = await getDoc(doc(db, "events", eventId));
       const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
-      const next = mergeQuizStatePatch(prev, { autoAdvanceRunning: false, betweenStartedAt: null });
+      const next = mergeQuizStatePatch(prev, {
+        status: "stopped",
+        currentQuestionId: null,
+        currentQuestionIndex: -1,
+        autoAdvanceRunning: false,
+        betweenStartedAt: null,
+        answerStartedAt: null,
+        questionDeadlineAt: null,
+        pausedFrom: null,
+      });
       await setDoc(
         doc(db, "events", eventId),
         {
-          quizSettings: { progressMode: "manual" },
+          quizSettings: { progressMode: "auto" },
           quizState: {
+            status: "stopped",
+            currentQuestionId: null,
+            currentQuestionIndex: -1,
             autoAdvanceRunning: false,
             betweenStartedAt: null,
+            answerStartedAt: null,
+            questionDeadlineAt: null,
+            pausedFrom: null,
           },
-          quizRunState: buildQuizRunStateMirror("manual", next),
+          quizRunState: buildQuizRunStateMirror("auto", next),
           updatedAt: serverTimestamp(),
         },
         { merge: true },
       );
-      setMessage("停止しました。手動進行タブで操作を続けられます。");
+      setMessage("停止しました。出題されている問題はありません。");
     } catch (e) {
       console.error(e);
       setMessage("停止に失敗しました。");
@@ -969,7 +984,7 @@ export function QuizAdminPanel({ eventId }: Props) {
   };
 
   const startAutoAdvance = async () => {
-    if (busy || !quizEnabled) return;
+    if (busy || !quizEnabled || !hasRunnableQuiz) return;
     autoLoopCancelRef.current = false;
     setBusy(true);
     setBusyAction("自動開始中…");
@@ -1163,6 +1178,9 @@ export function QuizAdminPanel({ eventId }: Props) {
 
   const autoRunning = runState.autoAdvanceRunning && quizSettings.progressMode === "auto";
   const autoStatusMeta = hostPhaseMeta(runState.status, runState.pausedFrom);
+  const totalQuizCount = quizzes.filter((quiz) => isBankPublished(quiz)).length || quizzes.length;
+  const hasAnyQuiz = quizzes.length > 0;
+  const hasRunnableQuiz = quizzes.some((quiz) => isBankPublished(quiz) && quiz.status !== "closed");
   const operatorStatusLabel =
     runState.status === "question"
       ? "回答受付中"
@@ -1475,15 +1493,35 @@ export function QuizAdminPanel({ eventId }: Props) {
       {adminTab === "run" ? (
         <div className="space-y-4 pb-6">
           <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
-            <p className="text-sm font-semibold text-[#6B7280]">
-              {broadcastQuiz ? `第${broadcastQuiz.order}問` : "第—問"}
-            </p>
-            <p className={`mt-3 text-3xl font-black ${autoStatusMeta.dotClass.replace("bg-", "text-")}`}>
-              {operatorStatusLabel}
-            </p>
-            <p className="mt-3 text-2xl font-bold tabular-nums text-[#111827]">
-              残り{displaySecondsLeft != null ? `${displaySecondsLeft}秒` : "—秒"}
-            </p>
+            {!hasAnyQuiz ? (
+              <div className="text-center">
+                <p className="text-2xl font-black text-[#111827]">問題がありません</p>
+                <p className="mt-3 text-sm text-[#6B7280]">問題作成タブから追加してください</p>
+              </div>
+            ) : runState.status === "finished" ? (
+              <div className="text-center">
+                <p className="text-2xl font-black text-[#111827]">クイズ終了</p>
+                <p className="mt-3 text-sm font-semibold text-[#6B7280]">全{totalQuizCount}問が終了しました</p>
+                <p className="mt-2 text-sm text-[#6B7280]">お疲れ様でした</p>
+              </div>
+            ) : runState.status === "stopped" ? (
+              <div className="text-center">
+                <p className="text-3xl font-black text-zinc-700">停止中</p>
+                <p className="mt-3 text-sm text-[#6B7280]">出題されている問題はありません</p>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-[#6B7280]">
+                  {broadcastQuiz ? `第${broadcastQuiz.order}問` : "第—問"}
+                </p>
+                <p className={`mt-3 text-3xl font-black ${autoStatusMeta.dotClass.replace("bg-", "text-")}`}>
+                  {operatorStatusLabel}
+                </p>
+                <p className="mt-3 text-2xl font-bold tabular-nums text-[#111827]">
+                  残り{displaySecondsLeft != null ? `${displaySecondsLeft}秒` : "—秒"}
+                </p>
+              </>
+            )}
           </section>
 
           <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
@@ -1491,12 +1529,12 @@ export function QuizAdminPanel({ eventId }: Props) {
             <div className="mt-4 flex flex-col gap-3">
               <button
                 type="button"
-                disabled={busy || autoRunning}
+                disabled={busy || autoRunning || !hasRunnableQuiz}
                 onClick={() => void startAutoAdvance()}
                 className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-[#7C3AED] to-[#A78BFA] px-5 text-base font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
               >
                 {busyAction === "自動開始中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
-                自動開始
+                {busyAction === "自動開始中…" ? "開始中..." : "自動開始"}
               </button>
               <button
                 type="button"
@@ -1509,7 +1547,7 @@ export function QuizAdminPanel({ eventId }: Props) {
               </button>
               <button
                 type="button"
-                disabled={busy || !autoRunning}
+                disabled={busy || !autoRunning || !hasAnyQuiz}
                 onClick={() => void stopAll()}
                 className="inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-[16px] border border-red-200 bg-white px-5 text-base font-bold text-red-700 shadow-sm disabled:opacity-50 touch-manipulation"
               >
