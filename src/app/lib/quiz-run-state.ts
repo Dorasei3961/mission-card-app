@@ -12,6 +12,7 @@ export type NormalizedQuizState = {
   status: QuizRunStatus;
   /** 一時停止直前の状態（再開用） */
   pausedFrom: "question" | "answer" | null;
+  currentRunId: string | null;
   currentQuestionId: string | null;
   currentQuestionIndex: number;
   startedAt: Timestamp | null;
@@ -43,6 +44,7 @@ export type QuizSettings = {
 const DEFAULT_STATE: NormalizedQuizState = {
   status: "stopped",
   pausedFrom: null,
+  currentRunId: null,
   currentQuestionId: null,
   currentQuestionIndex: -1,
   startedAt: null,
@@ -80,6 +82,7 @@ function overlayQuizRunState(base: Record<string, unknown>, run: Record<string, 
   if (!Object.keys(run).length) return base;
   const out = { ...base };
   if (typeof run.status === "string") out.status = run.status;
+  if (typeof run.currentRunId === "string" || run.currentRunId === null) out.currentRunId = run.currentRunId;
   if (typeof run.currentQuizId === "string" || run.currentQuizId === null) {
     out.currentQuestionId = run.currentQuizId === null ? null : run.currentQuizId;
   }
@@ -103,6 +106,7 @@ export function normalizeQuizStateFromFirestore(raw: Record<string, unknown> | u
   const status = normalizeRunStatus(raw.status);
   const pf = raw.pausedFrom;
   const pausedFrom = pf === "answer" || pf === "question" ? pf : null;
+  const currentRunId = typeof raw.currentRunId === "string" && raw.currentRunId ? raw.currentRunId : null;
   const curId = typeof raw.currentQuestionId === "string" && raw.currentQuestionId ? raw.currentQuestionId : null;
   const cqi =
     typeof raw.currentQuestionIndex === "number" && Number.isFinite(raw.currentQuestionIndex)
@@ -119,6 +123,7 @@ export function normalizeQuizStateFromFirestore(raw: Record<string, unknown> | u
   return {
     status,
     pausedFrom,
+    currentRunId,
     currentQuestionId: curId,
     currentQuestionIndex: cqi,
     startedAt: (raw.startedAt as Timestamp | null) ?? null,
@@ -141,6 +146,7 @@ export function normalizeQuizStateFromFirestore(raw: Record<string, unknown> | u
 export type QuizRunStateMirror = {
   mode: QuizProgressMode;
   status: QuizRunStatus;
+  currentRunId: string | null;
   currentQuizId: string | null;
   currentIndex: number;
   startedAt: Timestamp | null;
@@ -155,6 +161,7 @@ export function buildQuizRunStateMirror(
   return {
     mode,
     status: state.status,
+    currentRunId: state.currentRunId,
     currentQuizId: state.currentQuestionId,
     currentIndex: state.currentQuestionIndex,
     startedAt: state.startedAt,

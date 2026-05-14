@@ -120,14 +120,6 @@ function resequenceQuizzes(items: AdminQuiz[]): AdminQuiz[] {
     .map((quiz, idx) => ({ ...quiz, order: idx + 1 }));
 }
 
-function normalizeParticipantKey(name: string): string {
-  const normalized = name
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/\s+/g, "");
-  return normalized || "guest";
-}
-
 function fmtTs(ts: Timestamp | null): string {
   if (!ts) return "-";
   return ts.toDate().toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -291,9 +283,17 @@ export function QuizAdminPanel({ eventId }: Props) {
           selectedIndex?: unknown;
           isCorrect?: unknown;
           answeredAt?: unknown;
+          runId?: unknown;
         };
         const quizId = typeof raw.quizId === "string" ? raw.quizId : "";
         if (!quizId) return;
+        const answerRunId = typeof raw.runId === "string" && raw.runId ? raw.runId : null;
+        const activeRunId = runState.currentRunId;
+        if (activeRunId) {
+          if (answerRunId !== activeRunId) return;
+        } else if (answerRunId) {
+          return;
+        }
         if (!stats[quizId]) stats[quizId] = { total: 0, correct: 0 };
         stats[quizId].total += 1;
         if (raw.isCorrect === true) stats[quizId].correct += 1;
@@ -311,7 +311,7 @@ export function QuizAdminPanel({ eventId }: Props) {
       setParticipantAnswers(rows);
     });
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, runState.currentRunId]);
 
   const quizzesWithStats = useMemo(() => {
     return quizzes.map((q) => {
@@ -525,103 +525,6 @@ export function QuizAdminPanel({ eventId }: Props) {
     }
   };
 
-  const resetQuizAnswersForReplay = async (quiz: AdminQuiz) => {
-    const [answerSnap, pointLogSnap, participantSnap] = await Promise.all([
-      getDocs(collection(db, "events", eventId, "quizAnswers")),
-      getDocs(collection(db, "events", eventId, "pointLogs")),
-      getDocs(collection(db, "events", eventId, "participants")),
-    ]);
-
-    const answerDocs = answerSnap.docs.filter((snap) => snap.data().quizId === quiz.id);
-    const pointLogDocs = pointLogSnap.docs.filter((snap) => {
-      const raw = snap.data() as { type?: unknown; quizId?: unknown };
-      return raw.type === "quiz" && raw.quizId === quiz.id;
-    });
-
-    const participantDocsById = new Map(participantSnap.docs.map((snap) => [snap.id, snap] as const));
-    const participantDocsByName = new Map(
-      participantSnap.docs.map((snap) => {
-        const raw = snap.data() as { name?: unknown };
-        const name = typeof raw.name === "string" ? raw.name.trim() : "";
-        return [name, snap] as const;
-      }),
-    );
-
-    const pointAdjustments = new Map<string, { authUid: string; pointDelta: number }>();
-    pointLogDocs.forEach((snap) => {
-      const raw = snap.data() as {
-        uid?: unknown;
-        participantName?: unknown;
-        point?: unknown;
-      };
-      const authUid = typeof raw.uid === "string" ? raw.uid : "";
-      const participantName = typeof raw.participantName === "string" ? raw.participantName.trim() : "";
-      const point = typeof raw.point === "number" && Number.isFinite(raw.point) ? raw.point : 0;
-      if (point <= 0) return;
-
-      const participantDoc =
-        participantDocsById.get(authUid) ??
-        participantDocsById.get(normalizeParticipantKey(participantName)) ??
-        participantDocsByName.get(participantName);
-      if (!participantDoc) return;
-
-      const prev = pointAdjustments.get(participantDoc.id);
-      pointAdjustments.set(participantDoc.id, {
-        authUid,
-        pointDelta: (prev?.pointDelta ?? 0) + point,
-      });
-    });
-
-    const batch = writeBatch(db);
-    answerDocs.forEach((snap) => batch.delete(snap.ref));
-    pointLogDocs.forEach((snap) => batch.delete(snap.ref));
-
-    for (const [participantDocId, adj] of pointAdjustments.entries()) {
-      const participantSnapDoc = participantDocsById.get(participantDocId);
-      const participantData = participantSnapDoc?.data() as {
-        quizPoints?: unknown;
-        bingoPoints?: unknown;
-      } | undefined;
-      const currentQuizPoints =
-        typeof participantData?.quizPoints === "number" && Number.isFinite(participantData.quizPoints)
-          ? participantData.quizPoints
-          : 0;
-      const bingoPoints =
-        typeof participantData?.bingoPoints === "number" && Number.isFinite(participantData.bingoPoints)
-          ? participantData.bingoPoints
-          : 0;
-      const missionProgressSnap = await getDoc(doc(db, "events", eventId, "missionProgress", participantDocId));
-      const missionTotalRaw = missionProgressSnap.data()?.totalPoints;
-      const missionTotal =
-        typeof missionTotalRaw === "number" && Number.isFinite(missionTotalRaw) ? missionTotalRaw : 0;
-      const nextQuizPoints = Math.max(0, currentQuizPoints - adj.pointDelta);
-      const nextTotalPoints = missionTotal + bingoPoints + nextQuizPoints;
-
-      batch.set(
-        doc(db, "events", eventId, "participants", participantDocId),
-        {
-          quizPoints: nextQuizPoints,
-          totalPoints: nextTotalPoints,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-
-      if (adj.authUid) {
-        batch.set(
-          doc(db, "users", adj.authUid),
-          {
-            totalPoints: nextTotalPoints,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-      }
-    }
-
-    await batch.commit();
-  };
-
   const compactQuizOrders = async () => {
     const snap = await getDocs(collection(db, "events", eventId, "quizzes"));
     const sorted = snap.docs
@@ -661,7 +564,7 @@ export function QuizAdminPanel({ eventId }: Props) {
     }
   };
 
-  const activateQuiz = async (quiz: AdminQuiz, opts?: { fromAuto?: boolean; busyActionLabel?: string }) => {
+  const activateQuiz = async (quiz: AdminQuiz, opts?: { fromAuto?: boolean; busyActionLabel?: string; runId?: string | null }) => {
     if (!quizEnabled) return;
     if (!opts?.fromAuto && busy) return;
     if (!opts?.fromAuto) {
@@ -694,8 +597,10 @@ export function QuizAdminPanel({ eventId }: Props) {
       const evSnap = await getDoc(doc(db, "events", eventId));
       const mode = normalizeQuizSettingsFromFirestore(evSnap.data()?.quizSettings as Record<string, unknown>).progressMode;
       const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
+      const currentRunId = opts?.runId ?? prev.currentRunId ?? crypto.randomUUID();
       const next = mergeQuizStatePatch(prev, {
         status: "question",
+        currentRunId,
         currentQuestionId: quiz.id,
         currentQuestionIndex,
         timeLimitSeconds: tl,
@@ -709,6 +614,7 @@ export function QuizAdminPanel({ eventId }: Props) {
         {
           quizState: {
             status: "question",
+            currentRunId,
             currentQuestionId: quiz.id,
             currentQuestionIndex,
             startedAt: serverTimestamp(),
@@ -991,12 +897,13 @@ export function QuizAdminPanel({ eventId }: Props) {
     try {
       const evSnap0 = await getDoc(doc(db, "events", eventId));
       const prev0 = normalizeEventQuizState(evSnap0.data() as Record<string, unknown>);
-      const primed = mergeQuizStatePatch(prev0, { autoAdvanceRunning: true });
+      const runId = prev0.currentRunId ?? crypto.randomUUID();
+      const primed = mergeQuizStatePatch(prev0, { currentRunId: runId, autoAdvanceRunning: true });
       await setDoc(
         doc(db, "events", eventId),
         {
           quizSettings: { progressMode: "auto" },
-          quizState: { autoAdvanceRunning: true },
+          quizState: { currentRunId: runId, autoAdvanceRunning: true },
           quizRunState: buildQuizRunStateMirror("auto", primed),
           updatedAt: serverTimestamp(),
         },
@@ -1190,16 +1097,7 @@ export function QuizAdminPanel({ eventId }: Props) {
           ? "終了"
           : "停止中";
   const [displaySecondsLeft, setDisplaySecondsLeft] = useState<number | null>(null);
-  const replayQuiz = useMemo(() => {
-    if (runState.currentQuestionId) {
-      return quizzes.find((quiz) => quiz.id === runState.currentQuestionId) ?? null;
-    }
-    const latestActivated = [...quizzes]
-      .filter((quiz) => quiz.activatedAt)
-      .sort((a, b) => (b.activatedAt?.toMillis?.() ?? 0) - (a.activatedAt?.toMillis?.() ?? 0))[0];
-    return latestActivated ?? null;
-  }, [quizzes, runState.currentQuestionId]);
-  const canReplay = !!replayQuiz && runState.status !== "finished";
+  const canReplay = hasAnyQuiz && quizzes.some((quiz) => isBankPublished(quiz));
 
   useEffect(() => {
     if (runState.status === "question") {
@@ -1220,16 +1118,38 @@ export function QuizAdminPanel({ eventId }: Props) {
   }, [runState.status, runState.answerStartedAt, runState.answerDisplaySeconds, currentProgress.secondsLeft]);
 
   const replayCurrentQuiz = async () => {
-    if (busy || !canReplay || !replayQuiz) return;
+    if (busy || !canReplay) return;
     setBusy(true);
     setBusyAction("もう一度を準備中…");
     setMessage("");
     try {
-      await resetQuizAnswersForReplay(replayQuiz);
+      const published = [...quizzesRef.current]
+        .filter((quiz) => isBankPublished(quiz))
+        .sort(settingOrderMode === "random" ? () => Math.random() - 0.5 : sortByOrder);
+      const firstQuiz = published[0];
+      if (!firstQuiz) {
+        setMessage("再開できる公開問題がありません。");
+        return;
+      }
 
+      const reopenBatch = writeBatch(db);
+      published.forEach((quiz) => {
+        reopenBatch.set(
+          doc(db, "events", eventId, "quizzes", quiz.id),
+          { status: "draft", updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+      });
+      await reopenBatch.commit();
+
+      const newRunId = crypto.randomUUID();
       const evSnap = await getDoc(doc(db, "events", eventId));
       const prev = normalizeEventQuizState(evSnap.data() as Record<string, unknown>);
       const primed = mergeQuizStatePatch(prev, {
+        status: "question",
+        currentRunId: newRunId,
+        currentQuestionId: firstQuiz.id,
+        currentQuestionIndex: 0,
         autoAdvanceRunning: true,
         betweenStartedAt: null,
         answerStartedAt: null,
@@ -1240,6 +1160,10 @@ export function QuizAdminPanel({ eventId }: Props) {
         {
           quizSettings: { progressMode: "auto" },
           quizState: {
+            status: "question",
+            currentRunId: newRunId,
+            currentQuestionId: firstQuiz.id,
+            currentQuestionIndex: 0,
             autoAdvanceRunning: true,
             betweenStartedAt: null,
             answerStartedAt: null,
@@ -1251,8 +1175,8 @@ export function QuizAdminPanel({ eventId }: Props) {
         { merge: true },
       );
 
-      await activateQuiz(replayQuiz, { fromAuto: true });
-      setMessage(`第${replayQuiz.order}問をもう一度開始しました。`);
+      await activateQuiz(firstQuiz, { fromAuto: true, runId: newRunId });
+      setMessage("第1問からもう一度開始しました。");
     } catch (e) {
       console.error(e);
       setMessage("もう一度の実行に失敗しました。");
@@ -1545,6 +1469,7 @@ export function QuizAdminPanel({ eventId }: Props) {
                 {busyAction === "もう一度を準備中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : <RotateCcw className="h-5 w-5" aria-hidden />}
                 もう一度
               </button>
+              <p className="-mt-1 text-center text-xs font-semibold text-[#7C3AED]">第1問からもう一度再生します</p>
               <button
                 type="button"
                 disabled={busy || !autoRunning || !hasAnyQuiz}

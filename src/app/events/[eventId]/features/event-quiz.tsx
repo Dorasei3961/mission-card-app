@@ -26,6 +26,10 @@ type Props = { eventId: string };
 
 type QuizWithExplanation = QuizDoc & { explanation: string };
 
+function buildQuizAnswerId(runId: string | null, quizId: string, authUid: string): string {
+  return runId ? `${runId}_${quizId}_${authUid}` : `${quizId}_${authUid}`;
+}
+
 export function EventQuiz({ eventId }: Props) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -44,6 +48,7 @@ export function EventQuiz({ eventId }: Props) {
     activeQuizRef.current = activeQuiz;
   }, [activeQuiz]);
   const [runStatus, setRunStatus] = useState<QuizRunStatus>("stopped");
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [questionDeadlineMs, setQuestionDeadlineMs] = useState<number | null>(null);
   /** 確定した回答の選択肢インデックス（Firestore と同期） */
   const [answeredIndex, setAnsweredIndex] = useState<number | null>(null);
@@ -143,6 +148,7 @@ export function EventQuiz({ eventId }: Props) {
       };
       const qs = data.quizState;
       const normalized = normalizeEventQuizState(data);
+      setCurrentRunId(normalized.currentRunId);
       setQuestionDeadlineMs(normalized.questionDeadlineAt?.toMillis() ?? null);
       const qsEmpty = !qs || (typeof qs === "object" && Object.keys(qs).length === 0);
       if (qsEmpty && activeQuizRef.current) {
@@ -174,14 +180,14 @@ export function EventQuiz({ eventId }: Props) {
     setDraftChoice(null);
     setAnsweredIndex(null);
     setResult(null);
-  }, [activeQuiz?.id, activeQuiz?.activatedAt?.toMillis?.()]);
+  }, [activeQuiz?.id, activeQuiz?.activatedAt?.toMillis?.(), currentRunId]);
 
   useEffect(() => {
     if (!authUid || !activeQuiz) {
       setExistingAnswer(false);
       return;
     }
-    const aid = `${activeQuiz.id}_${authUid}`;
+    const aid = buildQuizAnswerId(currentRunId, activeQuiz.id, authUid);
     const unsub = onSnapshot(doc(db, "events", eventId, "quizAnswers", aid), (snap) => {
       setExistingAnswer(snap.exists());
       if (!snap.exists()) {
@@ -194,7 +200,7 @@ export function EventQuiz({ eventId }: Props) {
       setAnsweredIndex(typeof d.selectedIndex === "number" ? d.selectedIndex : null);
     });
     return () => unsub();
-  }, [eventId, authUid, activeQuiz?.id]);
+  }, [eventId, authUid, activeQuiz?.id, currentRunId]);
 
   const deadlineMs = useMemo(() => {
     if (questionDeadlineMs != null) return questionDeadlineMs;
@@ -237,7 +243,7 @@ export function EventQuiz({ eventId }: Props) {
     setSubmitting(true);
     setError("");
     try {
-      const answerId = `${activeQuiz.id}_${authUid}`;
+      const answerId = buildQuizAnswerId(currentRunId, activeQuiz.id, authUid);
       const ref = doc(db, "events", eventId, "quizAnswers", answerId);
       const prev = await getDoc(ref);
       if (prev.exists()) {
@@ -250,6 +256,7 @@ export function EventQuiz({ eventId }: Props) {
         quizId: activeQuiz.id,
         participantId: authUid,
         participantName: participantName || "参加者",
+        runId: currentRunId,
         selectedIndex: idx,
         isCorrect,
         answeredAt: serverTimestamp(),
@@ -270,6 +277,7 @@ export function EventQuiz({ eventId }: Props) {
           participantName: participantName || "参加者",
           type: "quiz",
           quizId: activeQuiz.id,
+          runId: currentRunId,
           quizTitle: activeQuiz.question.slice(0, 80),
           point: activeQuiz.points,
           reason: "クイズ正解",
