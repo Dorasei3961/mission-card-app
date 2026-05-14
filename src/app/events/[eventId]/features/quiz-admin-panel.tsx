@@ -40,6 +40,7 @@ import {
   type QuizSettings,
 } from "../../../lib/quiz-run-state";
 import { normalizeQuizFromFirestore, type QuizDoc, type QuizStatus } from "../../../lib/quiz-schema";
+import { ParticipantPreview } from "../../../admin/[eventId]/quiz/participant-preview";
 
 type Props = { eventId: string };
 type AdminQuizTab = "create" | "run" | "results";
@@ -1383,6 +1384,13 @@ export function QuizAdminPanel({ eventId }: Props) {
                 </div>
               )}
             </section>
+
+            <ParticipantPreview
+              runStatus={runState.status}
+              activeQuiz={broadcastQuiz}
+              secondsLeft={currentProgress.secondsLeft}
+              totalSeconds={currentProgress.total}
+            />
 
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
               <button
