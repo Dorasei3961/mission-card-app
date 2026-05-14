@@ -192,8 +192,6 @@ export function QuizAdminPanel({ eventId }: Props) {
   const [searchText, setSearchText] = useState("");
   const [selectedQuizId, setSelectedQuizId] = useState<string | null>(null);
   const [resultOrder, setResultOrder] = useState<ResultOrder>("latest");
-  const [manualAccordionOpen, setManualAccordionOpen] = useState(false);
-  const [autoAccordionOpen, setAutoAccordionOpen] = useState(false);
 
   const [runState, setRunState] = useState<NormalizedQuizState>(() => normalizeEventQuizState(undefined));
   const [quizSettings, setQuizSettings] = useState<QuizSettings>({ progressMode: "manual" });
@@ -1071,10 +1069,8 @@ export function QuizAdminPanel({ eventId }: Props) {
     eventId,
   ]);
 
-  const manualAllDisabled = runState.status === "finished";
-  const manualCanPublishQuestion = runState.status === "stopped" && !manualAllDisabled;
-  const manualCanShowAnswer = runState.status === "question" && !manualAllDisabled;
-  const manualCanPublishNext = runState.status === "answer" && !manualAllDisabled;
+  const autoRunning = runState.autoAdvanceRunning && quizSettings.progressMode === "auto";
+  const autoStatusMeta = hostPhaseMeta(runState.status, runState.pausedFrom);
 
   return (
     <div className="space-y-4 pb-32 text-[#111827]">
@@ -1309,64 +1305,49 @@ export function QuizAdminPanel({ eventId }: Props) {
           <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-[#111827]">進行コントロール</h2>
-                <p className="mt-1 text-sm text-[#6B7280]">運営がクイズを操作するエリアです。</p>
+                <h2 className="text-lg font-bold text-[#111827]">自動進行</h2>
+                <p className="mt-1 text-sm text-[#6B7280]">
+                  開始すると、問題公開・回答時間・答え表示・次の問題へを自動で行います。
+                </p>
               </div>
-              <button
-                type="button"
-                disabled={busy || !(runState.autoAdvanceRunning && quizSettings.progressMode === "auto")}
-                onClick={() => void stopAll()}
-                className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[14px] border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 shadow-sm disabled:opacity-50 touch-manipulation"
-              >
-                {busyAction === "停止中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                停止
-              </button>
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] lg:items-start">
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
               <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wide text-violet-600">進行モード</p>
-                <div className="flex flex-wrap gap-2">
-                  <span
-                    className={`inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border px-4 py-2 text-sm font-bold shadow-sm ${
-                      runState.autoAdvanceRunning && quizSettings.progressMode === "auto"
-                        ? "border-[#7C3AED] bg-[#7C3AED] text-white"
-                        : "border-[#C4B5FD] bg-white text-[#111827]"
-                    }`}
+                <p className="text-xs font-bold uppercase tracking-wide text-violet-600">進行方式</p>
+                <div className="inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border border-[#7C3AED] bg-[#7C3AED] px-4 py-2 text-sm font-bold text-white shadow-sm">
+                  <span className="h-2.5 w-2.5 rounded-full bg-white" aria-hidden />
+                  自動進行
+                </div>
+                <div className="flex flex-col gap-2 pt-2 sm:flex-row">
+                  <button
+                    type="button"
+                    disabled={busy || autoRunning}
+                    onClick={() => void startAutoAdvance()}
+                    className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation sm:w-auto"
                   >
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        runState.autoAdvanceRunning && quizSettings.progressMode === "auto" ? "bg-white" : "bg-[#7C3AED]"
-                      }`}
-                      aria-hidden
-                    />
-                    自動進行中
-                  </span>
-                  <span
-                    className={`inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border px-4 py-2 text-sm font-bold shadow-sm ${
-                      runState.autoAdvanceRunning && quizSettings.progressMode === "auto"
-                        ? "border-[#C4B5FD] bg-white text-[#111827]"
-                        : "border-[#7C3AED] bg-[#7C3AED] text-white"
-                    }`}
+                    {busyAction === "自動開始中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                    自動開始
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || !autoRunning}
+                    onClick={() => void stopAll()}
+                    className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-[14px] border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 shadow-sm disabled:opacity-50 touch-manipulation sm:w-auto"
                   >
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${
-                        runState.autoAdvanceRunning && quizSettings.progressMode === "auto" ? "bg-[#7C3AED]" : "bg-white"
-                      }`}
-                      aria-hidden
-                    />
-                    手動で進行
-                  </span>
+                    {busyAction === "停止中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+                    停止
+                  </button>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <p className="text-xs font-bold uppercase tracking-wide text-violet-600">現在の状態</p>
                 <span
-                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border px-4 py-2 text-sm font-bold shadow-sm ${hostPhaseMeta(runState.status, runState.pausedFrom).cardClass}`}
+                  className={`inline-flex min-h-[44px] items-center gap-2 rounded-[14px] border px-4 py-2 text-sm font-bold shadow-sm ${autoStatusMeta.cardClass}`}
                 >
-                  <span className={`h-2.5 w-2.5 rounded-full ${hostPhaseMeta(runState.status, runState.pausedFrom).dotClass}`} aria-hidden />
-                  {hostPhaseMeta(runState.status, runState.pausedFrom).label}
+                  <span className={`h-2.5 w-2.5 rounded-full ${autoStatusMeta.dotClass}`} aria-hidden />
+                  {autoStatusMeta.label}
                 </span>
               </div>
             </div>
@@ -1381,152 +1362,19 @@ export function QuizAdminPanel({ eventId }: Props) {
               <div className="flex items-center gap-2 text-xs font-semibold text-[#6B7280]">
                 <Play className="h-3.5 w-3.5 text-[#7C3AED]" strokeWidth={2} aria-hidden />
                 <span>
-                  {runState.autoAdvanceRunning && quizSettings.progressMode === "auto"
-                    ? "次の問題へ自動で進みます"
-                    : "次の問題へは手動で進めます"}
+                  次の問題へ自動で進みます
                 </span>
               </div>
             </div>
 
-            <div className="mt-5 space-y-4 border-t border-[#E9D5FF] pt-5">
-              <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setManualAccordionOpen((o) => !o)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left touch-manipulation"
-                >
-                  <span>
-                    <span className="text-sm font-bold text-[#111827]">運営手動進行</span>
-                    <span className="mt-0.5 block text-xs text-[#6B7280]">問題公開、答え表示、次を公開を手動で操作します。</span>
-                  </span>
-                  <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${manualAccordionOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
-                </button>
-                {manualAccordionOpen ? (
-                  <div className="space-y-4 border-t border-[#E9D5FF] px-4 pb-4 pt-3">
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <button
-                      type="button"
-                      disabled={busy || !manualCanPublishQuestion || manualAllDisabled}
-                      onClick={() => void manualPublishQuestion()}
-                      className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
-                    >
-                      <span className="text-xs font-bold text-[#7C3AED]">1</span>
-                      <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111827]">
-                        {busyAction === "公開中…" ? <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden /> : null}
-                        問題公開
-                      </p>
-                      <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">参加者に問題を表示し、回答を受け付けます</p>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !manualCanShowAnswer || manualAllDisabled}
-                      onClick={() => void manualShowAnswer()}
-                      className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
-                    >
-                      <span className="text-xs font-bold text-[#7C3AED]">2</span>
-                      <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111827]">
-                        {busyAction === "答えを表示中…" ? <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden /> : null}
-                        答え表示
-                      </p>
-                      <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">正解と解説を表示します</p>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy || !manualCanPublishNext || manualAllDisabled}
-                      onClick={() => void manualPublishNext()}
-                      className="flex min-h-[88px] flex-col rounded-[14px] border border-[#E9D5FF] bg-white p-3 text-left shadow-sm disabled:opacity-45 touch-manipulation"
-                    >
-                      <span className="text-xs font-bold text-[#7C3AED]">3</span>
-                      <p className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111827]">
-                        {busyAction === "次を公開中…" || busyAction === "終了処理中…" ? (
-                          <Loader2 className="h-4 w-4 animate-spin text-violet-600" aria-hidden />
-                        ) : null}
-                        次を公開
-                      </p>
-                      <p className="mt-1 text-[11px] leading-snug text-[#6B7280]">次の問題を公開し、すぐに回答受付を開始します</p>
-                    </button>
-                  </div>
-                  <div className="rounded-[14px] border border-[#E9D5FF] bg-zinc-50/80 p-3">
-                    <p className="text-xs font-semibold text-[#111827]">回答時間（問題公開から答え表示まで）</p>
-                    <div className="mt-2 flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="h-10 w-10 rounded-lg border border-[#E9D5FF] bg-white text-lg font-bold touch-manipulation"
-                        onClick={() => setSettingTimeLimit((v) => String(Math.max(1, Number(v || "20") - 1)))}
-                      >
-                        -
-                      </button>
-                      <span className="min-w-[3rem] text-center text-lg font-bold tabular-nums">{settingTimeLimit}秒</span>
-                      <button
-                        type="button"
-                        className="h-10 w-10 rounded-lg border border-[#E9D5FF] bg-white text-lg font-bold touch-manipulation"
-                        onClick={() => setSettingTimeLimit((v) => String(Math.max(1, Number(v || "20") + 1)))}
-                      >
-                        +
-                      </button>
-                    </div>
-                    <p className="mt-2 text-[11px] text-[#6B7280]">この時間は参加者が回答できる時間です（サーバー時刻基準で締め切ります）。</p>
-                    <label className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-[#E9D5FF] bg-white px-3 py-2 text-xs font-semibold text-[#111827]">
-                      <span>時間終了後に自動で答え表示へ切り替える</span>
-                      <input
-                        type="checkbox"
-                        checked={settingAutoReveal}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          void (async () => {
-                            try {
-                              await syncQuizRunMirror({ autoRevealAnswer: checked }, { autoRevealAnswer: checked });
-                            } catch (err) {
-                              console.error(err);
-                              setMessage("設定の更新に失敗しました。");
-                            }
-                          })();
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void saveBroadcastSettings()}
-                      className="mt-3 min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white shadow-sm disabled:opacity-50 touch-manipulation"
-                    >
-                      {busyAction === "設定を保存中…" ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" aria-hidden /> : null}
-                      手動進行の時間設定を保存
-                    </button>
-                  </div>
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="rounded-[18px] border border-[#E9D5FF] bg-white shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setAutoAccordionOpen((o) => !o)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left touch-manipulation"
-                >
-                  <span>
-                    <span className="text-sm font-bold text-[#111827]">自動進行</span>
-                    <span className="mt-0.5 block text-xs text-[#6B7280]">
-                      問題公開 → 回答時間 → 答え表示 → 次を公開、を自動で繰り返します。
-                    </span>
-                  </span>
-                  <ChevronRight className={`h-4 w-4 shrink-0 text-[#6B7280] transition ${autoAccordionOpen ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
-                </button>
-                {autoAccordionOpen ? (
-                  <div className="space-y-4 border-t border-[#E9D5FF] px-4 pb-4 pt-3">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={busy || runState.autoAdvanceRunning}
-                      onClick={() => void startAutoAdvance()}
-                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-[14px] bg-[#7C3AED] px-4 text-sm font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
-                    >
-                      {busyAction === "自動開始中…" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-                      自動開始
-                    </button>
-                  </div>
-                  <p className="text-center text-[11px] text-[#6B7280]">停止は画面上部の「停止」ボタンから行えます（自動を止めて手動待機に戻ります）。</p>
-                  <div className="grid gap-3 rounded-[14px] border border-[#E9D5FF] bg-zinc-50/80 p-3 sm:grid-cols-2">
+            <div className="mt-5 rounded-[16px] border border-[#E9D5FF] bg-zinc-50/80 p-4">
+              <div className="flex items-start gap-2 text-xs text-[#6B7280]">
+                <Play className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#7C3AED]" strokeWidth={2} aria-hidden />
+                <p className="leading-relaxed">
+                  問題公開 → 回答時間 → 答え表示 → 次の問題へ、を自動で繰り返し、最後まで進んだら終了します。
+                </p>
+              </div>
+              <div className="mt-4 grid gap-3 rounded-[14px] border border-[#E9D5FF] bg-white p-3 sm:grid-cols-2">
                     <div>
                       <p className="text-xs font-semibold text-[#111827]">1. 回答時間（秒）</p>
                       <input
@@ -1572,18 +1420,16 @@ export function QuizAdminPanel({ eventId }: Props) {
                       <span className="text-xs font-semibold text-[#111827]">5. 最後まで進んだら自動終了</span>
                       <input type="checkbox" checked={settingAutoFinish} onChange={(e) => setSettingAutoFinish(e.target.checked)} />
                     </label>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void saveBroadcastSettings()}
-                    className="min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white disabled:opacity-50 touch-manipulation"
-                  >
-                    自動進行の設定を保存
-                  </button>
-                  </div>
-                ) : null}
-              </section>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void saveBroadcastSettings()}
+                className="mt-4 min-h-[44px] w-full rounded-[14px] bg-[#7C3AED] text-sm font-bold text-white disabled:opacity-50 touch-manipulation"
+              >
+                {busyAction === "設定を保存中…" ? <Loader2 className="mr-2 inline h-4 w-4 animate-spin" aria-hidden /> : null}
+                自動進行の設定を保存
+              </button>
             </div>
           </section>
 
