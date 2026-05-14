@@ -49,11 +49,10 @@ export function ParticipantPreview({ runStatus, activeQuiz, secondsLeft, totalSe
     return (
       <div className="overflow-hidden rounded-2xl border border-violet-100 bg-white shadow-sm">
         <div className="border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600">ライブクイズ</p>
-              <p className="mt-1 text-[11px] font-semibold text-[#6B7280]">第{activeQuiz.order}問</p>
-            </div>
+          <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600">ライブクイズ</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-[#6B7280]">第{activeQuiz.order}問</span>
+            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-bold text-violet-800">出題中</span>
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
                 timeUp ? "bg-red-50 text-red-700 ring-1 ring-red-200" : "bg-violet-100 text-violet-800"
@@ -106,7 +105,7 @@ export function ParticipantPreview({ runStatus, activeQuiz, secondsLeft, totalSe
             onClick={() => setShowPreviewNotice(true)}
             className="mt-2 flex h-12 w-full items-center justify-center rounded-[14px] bg-[#7C3AED] text-base font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
           >
-            回答する
+            回答する（プレビュー）
           </button>
 
           {showPreviewNotice ? (
@@ -202,28 +201,27 @@ export function ParticipantPreview({ runStatus, activeQuiz, secondsLeft, totalSe
   };
 
   return (
-    <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
+    <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0 flex-1">
           <h3 className="text-sm font-bold text-[#111827]">参加者プレビュー</h3>
           <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
             参加者画面での見え方を確認できます。ここで選択しても回答には保存されません。
           </p>
         </div>
-        <span className="inline-flex rounded-full border border-[#E9D5FF] bg-violet-50 px-3 py-1 text-[11px] font-bold text-[#7C3AED]">
-          読み取り専用
-        </span>
-      </div>
-
-      <div className="mt-4 border-t border-[#E9D5FF] pt-4">
-        <button
-          type="button"
-          onClick={() => setOpen((prev) => !prev)}
-          className="inline-flex min-h-[40px] items-center gap-2 rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] shadow-sm touch-manipulation"
-        >
-          <ChevronRight className={`h-4 w-4 text-[#6B7280] transition ${open ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
-          {open ? "参加者プレビューを閉じる" : "参加者プレビューを表示"}
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          <span className="inline-flex rounded-full border border-[#E9D5FF] bg-violet-50 px-3 py-1 text-[11px] font-bold text-[#7C3AED]">
+            読み取り専用
+          </span>
+          <button
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
+            className="inline-flex min-h-[40px] items-center gap-2 rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] shadow-sm touch-manipulation"
+          >
+            <ChevronRight className={`h-4 w-4 text-[#6B7280] transition ${open ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
+            {open ? "プレビューを閉じる" : "プレビューを開く"}
+          </button>
+        </div>
       </div>
 
       {open ? (
