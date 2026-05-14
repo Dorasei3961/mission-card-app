@@ -202,21 +202,39 @@ export function ParticipantPreview({ runStatus, activeQuiz, secondsLeft, totalSe
 
   return (
     <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+      <div className="sm:hidden">
+        <h3 className="min-w-0 text-sm font-bold text-[#111827]">参加者プレビュー</h3>
+        <span className="mt-3 inline-flex rounded-full border border-[#E9D5FF] bg-violet-50 px-3 py-1 text-[11px] font-bold text-[#7C3AED]">
+          読み取り専用
+        </span>
+        <p className="mt-3 text-sm leading-relaxed text-[#6B7280]">
+          参加者画面での見え方を確認できます。ここで選択しても回答には保存されません。
+        </p>
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] shadow-sm touch-manipulation whitespace-nowrap"
+        >
+          <ChevronRight className={`h-4 w-4 text-[#6B7280] transition ${open ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
+          {open ? "プレビューを閉じる" : "プレビューを開く"}
+        </button>
+      </div>
+
+      <div className="hidden sm:flex sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <h3 className="text-sm font-bold text-[#111827]">参加者プレビュー</h3>
-          <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
+          <p className="mt-1 text-sm leading-relaxed text-[#6B7280]">
             参加者画面での見え方を確認できます。ここで選択しても回答には保存されません。
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-col items-end gap-2 self-start">
           <span className="inline-flex rounded-full border border-[#E9D5FF] bg-violet-50 px-3 py-1 text-[11px] font-bold text-[#7C3AED]">
             読み取り専用
           </span>
           <button
             type="button"
             onClick={() => setOpen((prev) => !prev)}
-            className="inline-flex min-h-[40px] items-center gap-2 rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] shadow-sm touch-manipulation"
+            className="inline-flex min-h-[40px] w-full items-center gap-2 rounded-[14px] border border-[#E9D5FF] bg-white px-4 text-sm font-bold text-[#111827] shadow-sm touch-manipulation whitespace-nowrap sm:w-auto"
           >
             <ChevronRight className={`h-4 w-4 text-[#6B7280] transition ${open ? "rotate-90" : ""}`} strokeWidth={2} aria-hidden />
             {open ? "プレビューを閉じる" : "プレビューを開く"}
