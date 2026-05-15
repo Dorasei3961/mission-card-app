@@ -152,6 +152,12 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      // クイズ進行の拡張（スキップ一覧など events/{eventId}/quiz/main）
+      match /quiz/{docId} {
+        allow read: if true;
+        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+      }
+
       // ルーレット設定（運営=owner のみ編集、全員閲覧可）
       match /rouletteSettings/{docId} {
         allow read: if true;

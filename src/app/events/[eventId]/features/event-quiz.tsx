@@ -20,6 +20,7 @@ import { clearEventScopedStorage, getEventSession, setEventSession } from "../..
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { normalizeQuizFromFirestore, type QuizDoc } from "../../../lib/quiz-schema";
 import { normalizeEventQuizState, type QuizRunStatus } from "../../../lib/quiz-run-state";
+import { quizMainDocRef, normalizeQuizMainDoc } from "../../../lib/quiz-main-doc";
 import { CheckCircle2, CircleDot, Clock, HelpCircle, Pause } from "lucide-react";
 
 type Props = { eventId: string };
@@ -43,6 +44,7 @@ export function EventQuiz({ eventId }: Props) {
   const [quizEnabled, setQuizEnabled] = useState(false);
   const [eventClosed, setEventClosed] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState<QuizWithExplanation | null>(null);
+  const [quizMain, setQuizMain] = useState(() => normalizeQuizMainDoc(undefined));
   const activeQuizRef = useRef<QuizWithExplanation | null>(null);
   useEffect(() => {
     activeQuizRef.current = activeQuiz;
@@ -163,6 +165,18 @@ export function EventQuiz({ eventId }: Props) {
   }, [eventId, ready, canPlay]);
 
   useEffect(() => {
+    if (!ready || !canPlay || !quizEnabled) return;
+    const unsub = onSnapshot(
+      quizMainDocRef(eventId),
+      (snap) => {
+        setQuizMain(normalizeQuizMainDoc(snap.exists() ? (snap.data() as Record<string, unknown>) : undefined));
+      },
+      () => setQuizMain(normalizeQuizMainDoc(undefined)),
+    );
+    return () => unsub();
+  }, [eventId, ready, canPlay, quizEnabled]);
+
+  useEffect(() => {
     if (!activeQuiz || !canPlay) return;
     void getDoc(doc(db, "events", eventId)).then((snap) => {
       if (!snap.exists()) return;
@@ -210,7 +224,7 @@ export function EventQuiz({ eventId }: Props) {
   }, [activeQuiz, questionDeadlineMs]);
 
   useEffect(() => {
-    if (!deadlineMs || eventClosed || runStatus !== "question") {
+    if (!deadlineMs || eventClosed || runStatus !== "question" || quizMain.skipNoticeQuestionId) {
       setTimeUp(false);
       return;
     }
@@ -220,11 +234,11 @@ export function EventQuiz({ eventId }: Props) {
     tick();
     const id = window.setInterval(tick, 500);
     return () => window.clearInterval(id);
-  }, [deadlineMs, eventClosed, runStatus]);
+  }, [deadlineMs, eventClosed, runStatus, quizMain.skipNoticeQuestionId]);
 
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   useEffect(() => {
-    if (runStatus !== "question" || !deadlineMs) {
+    if (runStatus !== "question" || !deadlineMs || quizMain.skipNoticeQuestionId) {
       setSecondsLeft(null);
       return;
     }
@@ -234,10 +248,12 @@ export function EventQuiz({ eventId }: Props) {
     tick();
     const id = window.setInterval(tick, 500);
     return () => window.clearInterval(id);
-  }, [deadlineMs, runStatus]);
+  }, [deadlineMs, runStatus, quizMain.skipNoticeQuestionId]);
 
   const submitAnswer = async (idx: number) => {
     if (!activeQuiz || !participantDocId || !authUid || !canPlay || eventClosed || timeUp || runStatus !== "question") return;
+    if (quizMain.skipNoticeQuestionId === activeQuiz.id) return;
+    if (quizMain.skippedQuestionIds.includes(activeQuiz.id)) return;
     if (existingAnswer) return;
     if (idx < 0 || idx >= activeQuiz.choices.length) return;
     setSubmitting(true);
@@ -360,6 +376,19 @@ export function EventQuiz({ eventId }: Props) {
     );
   }
 
+  const showHostSkipMessage =
+    !!quizMain.skipNoticeQuestionId && (!activeQuiz || activeQuiz.id === quizMain.skipNoticeQuestionId);
+
+  if (showHostSkipMessage) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/90 p-6 text-center shadow-sm">
+        <p className="text-sm font-bold text-amber-950">この問題はスキップされました</p>
+        <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-900/90">スキップ済み（加点なし）</p>
+        <p className="mt-2 text-xs text-amber-800/90">次の出題までしばらくお待ちください。</p>
+      </div>
+    );
+  }
+
   if (runStatus === "answer") {
     if (!activeQuiz) {
       return (
@@ -443,7 +472,14 @@ export function EventQuiz({ eventId }: Props) {
     );
   }
 
-  const locked = !!eventClosed || !!submitting || existingAnswer || timeUp || runStatus !== "question";
+  const locked =
+    !!eventClosed ||
+    !!submitting ||
+    existingAnswer ||
+    timeUp ||
+    runStatus !== "question" ||
+    quizMain.skipNoticeQuestionId === activeQuiz.id ||
+    quizMain.skippedQuestionIds.includes(activeQuiz.id);
   const choiceSelectable = !locked;
 
   return (
@@ -451,7 +487,7 @@ export function EventQuiz({ eventId }: Props) {
       <div className="border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white px-4 py-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[11px] font-bold uppercase tracking-wide text-violet-600">ライブクイズ</p>
-          {deadlineMs ? (
+          {deadlineMs && runStatus === "question" && !quizMain.skipNoticeQuestionId ? (
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
                 timeUp ? "bg-red-50 text-red-700 ring-1 ring-red-200" : "bg-violet-100 text-violet-800"

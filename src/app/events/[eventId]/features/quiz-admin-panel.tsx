@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- Firestore listeners and form sync update UI from external state */
 
 import {
+  arrayUnion,
   collection,
   deleteDoc,
   doc,
@@ -41,6 +42,7 @@ import {
   type QuizSettings,
 } from "../../../lib/quiz-run-state";
 import { normalizeQuizFromFirestore, type QuizDoc, type QuizStatus } from "../../../lib/quiz-schema";
+import { quizMainDocRef, normalizeQuizMainDoc, type QuizMainDocNormalized } from "../../../lib/quiz-main-doc";
 import { ParticipantPreview } from "../../../admin/[eventId]/quiz/participant-preview";
 
 type Props = { eventId: string };
@@ -184,6 +186,7 @@ export function QuizAdminPanel({ eventId }: Props) {
   const [quizSettings, setQuizSettings] = useState<QuizSettings>({ progressMode: "manual" });
   const [answerStats, setAnswerStats] = useState<AnswerStats>({});
   const [participantAnswers, setParticipantAnswers] = useState<ParticipantAnswer[]>([]);
+  const [quizMain, setQuizMain] = useState<QuizMainDocNormalized>(() => normalizeQuizMainDoc(undefined));
 
   const runStateRef = useRef(runState);
   const quizSettingsRef = useRef(quizSettings);
@@ -240,6 +243,17 @@ export function QuizAdminPanel({ eventId }: Props) {
   }, [eventId]);
 
   useEffect(() => {
+    const unsub = onSnapshot(
+      quizMainDocRef(eventId),
+      (snap) => {
+        setQuizMain(normalizeQuizMainDoc(snap.exists() ? (snap.data() as Record<string, unknown>) : undefined));
+      },
+      () => setQuizMain(normalizeQuizMainDoc(undefined)),
+    );
+    return () => unsub();
+  }, [eventId]);
+
+  useEffect(() => {
     setSettingTimeLimit(String(runState.timeLimitSeconds || 20));
     setSettingOrderMode(runState.orderMode);
     setSettingAutoNext(runState.autoNext);
@@ -276,6 +290,7 @@ export function QuizAdminPanel({ eventId }: Props) {
     const unsub = onSnapshot(collection(db, "events", eventId, "quizAnswers"), (snap) => {
       const stats: AnswerStats = {};
       const rows: ParticipantAnswer[] = [];
+      const skippedSet = new Set(quizMain.skippedQuestionIds);
       snap.docs.forEach((d) => {
         const raw = d.data() as {
           quizId?: unknown;
@@ -287,6 +302,7 @@ export function QuizAdminPanel({ eventId }: Props) {
         };
         const quizId = typeof raw.quizId === "string" ? raw.quizId : "";
         if (!quizId) return;
+        if (skippedSet.has(quizId)) return;
         const answerRunId = typeof raw.runId === "string" && raw.runId ? raw.runId : null;
         const activeRunId = runState.currentRunId;
         if (activeRunId) {
@@ -311,7 +327,7 @@ export function QuizAdminPanel({ eventId }: Props) {
       setParticipantAnswers(rows);
     });
     return () => unsub();
-  }, [eventId, runState.currentRunId]);
+  }, [eventId, runState.currentRunId, quizMain.skippedQuestionIds.join(",")]);
 
   const quizzesWithStats = useMemo(() => {
     return quizzes.map((q) => {
@@ -637,6 +653,24 @@ export function QuizAdminPanel({ eventId }: Props) {
         },
         { merge: true },
       );
+      const mainSnap = await getDoc(quizMainDocRef(eventId));
+      const prevMainRun =
+        mainSnap.exists() && typeof (mainSnap.data() as { currentRunId?: unknown }).currentRunId === "string"
+          ? (mainSnap.data() as { currentRunId: string }).currentRunId
+          : null;
+      const runScopeChanged = prevMainRun != null && prevMainRun !== currentRunId;
+
+      await setDoc(
+        quizMainDocRef(eventId),
+        {
+          skipNoticeQuestionId: null,
+          status: "idle",
+          currentRunId,
+          ...(runScopeChanged ? { skippedQuestionIds: [] } : {}),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
       setMessage(opts?.fromAuto ? "" : "問題を公開しました。");
       setSelectedQuizId(quiz.id);
     } catch (e) {
@@ -824,6 +858,11 @@ export function QuizAdminPanel({ eventId }: Props) {
           quizRunState: buildQuizRunStateMirror("auto", next),
           updatedAt: serverTimestamp(),
         },
+        { merge: true },
+      );
+      await setDoc(
+        quizMainDocRef(eventId),
+        { skipNoticeQuestionId: null, status: "idle", updatedAt: serverTimestamp() },
         { merge: true },
       );
       setMessage("停止しました。出題されている問題はありません。");
@@ -1117,6 +1156,66 @@ export function QuizAdminPanel({ eventId }: Props) {
     return undefined;
   }, [runState.status, runState.answerStartedAt, runState.answerDisplaySeconds, currentProgress.secondsLeft]);
 
+  const skipCurrentQuestion = async () => {
+    if (busy || !quizEnabled) return;
+    const rs = runStateRef.current;
+    if (rs.status !== "question" || !rs.currentQuestionId) {
+      setMessage("スキップできるのは回答受付中（出題中）のときだけです。");
+      return;
+    }
+    autoLoopCancelRef.current = true;
+    setBusy(true);
+    setBusyAction("スキップ処理中…");
+    setMessage("");
+    const curId = rs.currentQuestionId;
+    const runId = rs.currentRunId;
+    try {
+      await setDoc(doc(db, "events", eventId, "quizzes", curId), { status: "closed", updatedAt: serverTimestamp() }, { merge: true });
+
+      const mode = quizSettingsRef.current.progressMode;
+      const betweenOk = mode === "auto" && rs.autoAdvanceRunning;
+      const betweenTs = betweenOk ? Timestamp.now() : null;
+
+      await setDoc(
+        quizMainDocRef(eventId),
+        {
+          skippedQuestionIds: arrayUnion(curId),
+          skipNoticeQuestionId: curId,
+          status: "skipped",
+          currentRunId: runId,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      await syncQuizRunMirror(
+        {
+          status: "stopped",
+          currentQuestionId: null,
+          questionDeadlineAt: null,
+          answerStartedAt: null,
+          betweenStartedAt: betweenOk ? serverTimestamp() : null,
+        },
+        {
+          status: "stopped",
+          currentQuestionId: null,
+          questionDeadlineAt: null,
+          answerStartedAt: null,
+          betweenStartedAt: betweenTs,
+        },
+      );
+
+      setMessage("この問題をスキップしました。次の出題に進めます。");
+    } catch (e) {
+      console.error(e);
+      setMessage("スキップに失敗しました。");
+    } finally {
+      autoLoopCancelRef.current = false;
+      setBusy(false);
+      setBusyAction(null);
+    }
+  };
+
   const replayCurrentQuiz = async () => {
     if (busy || !canReplay) return;
     setBusy(true);
@@ -1141,6 +1240,17 @@ export function QuizAdminPanel({ eventId }: Props) {
         );
       });
       await reopenBatch.commit();
+
+      await setDoc(
+        quizMainDocRef(eventId),
+        {
+          skippedQuestionIds: [],
+          skipNoticeQuestionId: null,
+          status: "idle",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
 
       const newRunId = crypto.randomUUID();
       const evSnap = await getDoc(doc(db, "events", eventId));
@@ -1479,6 +1589,18 @@ export function QuizAdminPanel({ eventId }: Props) {
                 {busyAction === "停止中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
                 停止
               </button>
+              <button
+                type="button"
+                disabled={busy || runState.status !== "question" || !runState.currentQuestionId}
+                onClick={() => void skipCurrentQuestion()}
+                className="inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] bg-gradient-to-r from-amber-500 to-orange-500 px-5 text-base font-bold text-white shadow-sm disabled:opacity-45 touch-manipulation"
+              >
+                {busyAction === "スキップ処理中…" ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden /> : null}
+                スキップ
+              </button>
+              <p className="-mt-1 text-center text-xs text-[#6B7280]">
+                回答受付中のみ実行できます。この問題は結果集計から除外します（既に付与されたポイントは変更しません）。
+              </p>
             </div>
           </section>
 
@@ -1574,12 +1696,20 @@ export function QuizAdminPanel({ eventId }: Props) {
               </select>
             </div>
             <ul className="mt-3 space-y-2">
-              {quizzesWithStats.sort(sortByOrder).map((q) => (
-                <li key={q.id} className="rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2">
-                  <p className="text-sm font-semibold text-zinc-900">第{q.order}問 {q.question}</p>
-                  <p className="text-xs text-zinc-600">回答数 {q.totalAnswers} / 正解数 {q.correctAnswers} / 正解率 {q.correctRate}%</p>
-                </li>
-              ))}
+              {quizzesWithStats.sort(sortByOrder).map((q) =>
+                quizMain.skippedQuestionIds.includes(q.id) ? (
+                  <li key={q.id} className="rounded-xl border border-amber-200 bg-amber-50/60 px-3 py-2">
+                    <p className="text-sm font-semibold text-amber-950">第{q.order}問</p>
+                    <p className="mt-1 text-sm font-bold text-amber-800">スキップ済み</p>
+                    <p className="text-xs font-semibold text-amber-900/80">加算なし</p>
+                  </li>
+                ) : (
+                  <li key={q.id} className="rounded-xl border border-zinc-200 bg-zinc-50/50 px-3 py-2">
+                    <p className="text-sm font-semibold text-zinc-900">第{q.order}問 {q.question}</p>
+                    <p className="text-xs text-zinc-600">回答数 {q.totalAnswers} / 正解数 {q.correctAnswers} / 正解率 {q.correctRate}%</p>
+                  </li>
+                ),
+              )}
             </ul>
           </section>
           <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-sm">
