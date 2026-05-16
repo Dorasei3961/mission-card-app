@@ -14,18 +14,42 @@ export function rouletteSegmentDisplayText(
   return `${primary.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
-/** 色リング内側寄りのラベル配置半径（px）— 境界線ではなく扇形の中央付近 */
+/** 中心〜外周の中間付近（扇形の径方向中央） */
 export function segmentLabelRadiusPx(outerRadiusPx: number, innerHubRadiusPx: number): number {
   const usable = Math.max(0, outerRadiusPx - innerHubRadiusPx);
-  return innerHubRadiusPx + usable * 0.58;
+  return innerHubRadiusPx + usable * 0.5;
 }
 
-/** 扇形の弦長に合わせたラベル最大幅（px） */
+/** 扇形の弦長に合わせたラベル最大幅（px）— 境界線から余白を確保 */
 export function segmentTextMaxWidthPx(segmentCount: number, labelRadiusPx: number): number {
   if (segmentCount <= 0) return 48;
   const segDeg = 360 / segmentCount;
   const halfRad = (segDeg / 2) * (Math.PI / 180);
-  return Math.max(32, Math.floor(2 * labelRadiusPx * Math.sin(halfRad) * 0.82));
+  return Math.max(28, Math.floor(2 * labelRadiusPx * Math.sin(halfRad) * 0.7));
+}
+
+/** セグメント数に応じたフォントサイズ（px） */
+export function segmentLabelFontSizePx(segmentCount: number): number {
+  if (segmentCount <= 3) return 12;
+  if (segmentCount <= 5) return 11;
+  if (segmentCount <= 7) return 10;
+  if (segmentCount <= 9) return 9;
+  return 8;
+}
+
+/** 盤面回転を反映したラベル座標（水平表示・rotate なし） */
+export function segmentLabelOffsetPx(
+  segmentIndex: number,
+  segmentCount: number,
+  wheelRotationDeg: number,
+  labelRadiusPx: number,
+): { x: number; y: number } {
+  const angleDeg = segmentCenterAngleDeg(segmentIndex, segmentCount) + wheelRotationDeg;
+  const rad = (angleDeg * Math.PI) / 180;
+  return {
+    x: Math.cos(rad) * labelRadiusPx,
+    y: Math.sin(rad) * labelRadiusPx,
+  };
 }
 
 /** セグメント中心角（deg）。conic-gradient(from -90deg) と同一基準 */

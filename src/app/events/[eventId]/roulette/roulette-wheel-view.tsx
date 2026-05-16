@@ -4,7 +4,8 @@ import { useMemo } from "react";
 import { ROULETTE_SEGMENT_COLORS } from "../../../lib/roulette-schema";
 import {
   rouletteSegmentDisplayText,
-  segmentCenterAngleDeg,
+  segmentLabelFontSizePx,
+  segmentLabelOffsetPx,
   segmentLabelRadiusPx,
   segmentTextMaxWidthPx,
 } from "../../../lib/roulette-display";
@@ -42,7 +43,9 @@ export function RouletteWheelView({
   const innerHubRadius = HUB_PX / 2;
   const labelRadius = segmentLabelRadiusPx(outerRadius, innerHubRadius);
   const labelMaxWidth = segmentTextMaxWidthPx(n, labelRadius);
-  const labelFontSize = n > 8 ? 9 : n > 6 ? 10 : 11;
+  const labelFontSize = segmentLabelFontSizePx(n);
+  const labelTransition =
+    transitionMs > 0 ? `transform ${transitionMs}ms ${transitionEasing}` : "none";
 
   const gradient = useMemo(() => {
     if (n === 0) return "conic-gradient(from -90deg, #E5E7EB 0deg 360deg)";
@@ -67,50 +70,57 @@ export function RouletteWheelView({
           style={{ filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.15))" }}
         />
       </div>
-      <div
-        className="relative h-[272px] w-[272px] rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)] will-change-transform"
-        style={{
-          transform: `rotate(${rotationDeg}deg)`,
-          transition: transitionMs > 0 ? `transform ${transitionMs}ms ${transitionEasing}` : "none",
-          background: gradient,
-        }}
-      >
-        {segments.map((item, i) => {
-          const centerDeg = segmentCenterAngleDeg(i, n);
-          const rad = (centerDeg * Math.PI) / 180;
-          const x = Math.cos(rad) * labelRadius;
-          const y = Math.sin(rad) * labelRadius;
-          const displayText = rouletteSegmentDisplayText(item, n);
-          const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
-          return (
-            <div
-              key={item.id}
-              className="absolute left-1/2 top-1/2 z-[1] flex items-center justify-center"
-              style={{
-                transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${-rotationDeg}deg)`,
-              }}
-            >
-              <span
-                title={fullTitle || displayText}
-                className="line-clamp-2 block overflow-hidden text-center font-bold leading-tight text-[#111827]"
+
+      <div className="relative h-[272px] w-[272px]">
+        {/* 色セグメントのみ回転（ラベルは回転しない） */}
+        <div
+          className="absolute inset-0 rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)] will-change-transform"
+          style={{
+            transform: `rotate(${rotationDeg}deg)`,
+            transition: labelTransition,
+            background: gradient,
+          }}
+        />
+
+        {/* 横向きラベル（常に水平・セグメント中心に追従） */}
+        <div className="pointer-events-none absolute inset-0 z-[1]">
+          {segments.map((item, i) => {
+            const { x, y } = segmentLabelOffsetPx(i, n, rotationDeg, labelRadius);
+            const displayText = rouletteSegmentDisplayText(item, n);
+            const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
+            return (
+              <div
+                key={item.id}
+                className="absolute left-1/2 top-1/2 flex items-center justify-center px-0.5"
                 style={{
+                  transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
+                  transition: labelTransition,
                   maxWidth: labelMaxWidth,
-                  fontSize: labelFontSize,
-                  wordBreak: "keep-all",
-                  overflowWrap: "anywhere",
                 }}
               >
-                {displayText}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-        <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#7C3AED] shadow-[0_4px_14px_rgba(124,58,237,0.45)] ring-4 ring-white/90">
-          <span className="max-w-[68px] overflow-hidden text-ellipsis whitespace-nowrap text-center text-xs font-black leading-tight text-white">
-            {centerText}
-          </span>
+                <span
+                  title={fullTitle || displayText}
+                  className="line-clamp-2 w-full overflow-hidden text-center font-bold leading-snug text-[#111827]"
+                  style={{
+                    fontSize: labelFontSize,
+                    wordBreak: "keep-all",
+                    overflowWrap: "anywhere",
+                    textAlign: "center",
+                  }}
+                >
+                  {displayText}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#7C3AED] shadow-[0_4px_14px_rgba(124,58,237,0.45)] ring-4 ring-white/90">
+            <span className="max-w-[68px] overflow-hidden text-ellipsis whitespace-nowrap text-center text-xs font-black leading-tight text-white">
+              {centerText}
+            </span>
+          </div>
         </div>
       </div>
     </div>
