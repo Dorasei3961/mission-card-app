@@ -44,6 +44,19 @@ export function RouletteWheelView({
   const spinTransition =
     transitionMs > 0 ? `transform ${transitionMs}ms ${transitionEasing}` : "none";
 
+  const segmentGradient = useMemo(() => {
+    if (n === 0) return "conic-gradient(from -90deg, #E5E7EB 0deg 360deg)";
+    const segDeg = 360 / n;
+    const parts: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const start = i * segDeg;
+      const end = (i + 1) * segDeg;
+      const c = ROULETTE_SEGMENT_COLORS[i % ROULETTE_SEGMENT_COLORS.length];
+      parts.push(`${c} ${start}deg ${end}deg`);
+    }
+    return `conic-gradient(from -90deg, ${parts.join(", ")})`;
+  }, [n]);
+
   return (
     <div className="relative mx-auto flex h-[280px] w-[280px] shrink-0 items-center justify-center">
       <div
@@ -57,32 +70,33 @@ export function RouletteWheelView({
       </div>
 
       <div className="relative h-[272px] w-[272px] overflow-hidden rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
-        {/* 色＋ラベルをセグメント単位で一体回転 */}
+        {/* 色（円弧の conic-gradient）＋ラベル（セグメント単位）を一体回転 */}
         <div
-          className="absolute inset-0 bg-white will-change-transform"
+          className="absolute inset-0 will-change-transform"
           style={{
             transform: `rotate(${rotationDeg}deg)`,
             transition: spinTransition,
           }}
         >
-          {n === 0 ? (
-            <div className="absolute inset-0 bg-[#E5E7EB]" aria-hidden />
-          ) : (
+          <div
+            className="pointer-events-none absolute inset-0 rounded-full"
+            style={{ background: segmentGradient }}
+            aria-hidden
+          />
+          {n > 0 &&
             segments.map((item, i) => (
               <RouletteSegmentSlice
                 key={item.id}
                 item={item}
                 segmentIndex={i}
                 segmentCount={n}
-                fillColor={ROULETTE_SEGMENT_COLORS[i % ROULETTE_SEGMENT_COLORS.length]}
                 labelRadiusPx={labelRadius}
                 labelFontSizePx={labelFontSize}
                 clipInnerPercent={clipInnerPercent}
                 parentRotationDeg={rotationDeg}
                 spinTransition={spinTransition}
               />
-            ))
-          )}
+            ))}
         </div>
 
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">

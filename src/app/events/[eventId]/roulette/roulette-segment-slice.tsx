@@ -13,7 +13,6 @@ type Props = {
   item: RouletteItemRow;
   segmentIndex: number;
   segmentCount: number;
-  fillColor: string;
   labelRadiusPx: number;
   labelFontSizePx: number;
   clipInnerPercent: number;
@@ -22,13 +21,12 @@ type Props = {
 };
 
 /**
- * 1セグメント = 扇形の色 + その景品ラベル（同一 DOM・同一 clip）
+ * 1セグメント = その景品ラベル（色は親の conic-gradient、clip は文字のはみ出し防止のみ）
  */
 export function RouletteSegmentSlice({
   item,
   segmentIndex,
   segmentCount,
-  fillColor,
   labelRadiusPx,
   labelFontSizePx,
   clipInnerPercent,
@@ -49,8 +47,6 @@ export function RouletteSegmentSlice({
         WebkitClipPath: clip,
       }}
     >
-      <div className="absolute inset-0" style={{ backgroundColor: fillColor }} aria-hidden />
-
       <div
         className="absolute left-1/2 top-1/2 z-[1] flex items-center justify-center overflow-hidden"
         style={{
