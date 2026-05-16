@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronRight, Target } from "lucide-react";
+import { Check, ChevronRight, Target } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
   addDoc,
@@ -86,6 +86,7 @@ export function EventMissions({ eventId }: Props) {
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
   /** participants.totalPoints（ミッション保存・クイズ加点と同期） */
   const [liveParticipantTotalPts, setLiveParticipantTotalPts] = useState<number | null>(null);
+  const saveSeqRef = useRef(0);
 
   const visibleMissions = useMemo(
     () =>
@@ -110,6 +111,17 @@ export function EventMissions({ eventId }: Props) {
   }, [visibleMissions, checkedMissionIds, numberValues]);
 
   const showRankingLink = useParticipantRankingLink(eventId);
+
+  const toggleMissionCheck = useCallback(
+    (missionId: number) => {
+      if (!isReady || isClosed) return;
+      setErrorMessage("");
+      setCheckedMissionIds((prev) =>
+        prev.includes(missionId) ? prev.filter((id) => id !== missionId) : [...prev, missionId],
+      );
+    },
+    [isReady, isClosed],
+  );
 
   useEffect(() => {
     const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -315,18 +327,23 @@ export function EventMissions({ eventId }: Props) {
   useEffect(() => {
     if (!isReady || !participantDocId || !authUid || !canUseMissions || isClosed) return;
 
+    const checkedSnapshot = checkedMissionIds;
+    const numbersSnapshot = numberValues;
+    const saveSeq = ++saveSeqRef.current;
+    const isStale = () => saveSeq !== saveSeqRef.current;
+
     const saveProgress = async () => {
       try {
         const active = missions.filter((m) => m.isActive !== false);
         let computedTotal = 0;
         let completedCount = 0;
         for (const m of active) {
-          if (m.type === "checkbox" && checkedMissionIds.includes(m.id)) {
+          if (m.type === "checkbox" && checkedSnapshot.includes(m.id)) {
             computedTotal += m.points;
             completedCount += 1;
           }
           if (m.type === "number") {
-            const c = Math.max(0, Math.floor(numberValues[m.id] ?? 0));
+            const c = Math.max(0, Math.floor(numbersSnapshot[m.id] ?? 0));
             computedTotal += c * m.pointPerUnit;
             if (c > 0) completedCount += 1;
           }
@@ -334,6 +351,8 @@ export function EventMissions({ eventId }: Props) {
 
         const progressRef = doc(db, "events", eventId, "missionProgress", participantDocId);
         const beforeSnap = await getDoc(progressRef);
+        if (isStale()) return;
+
         const beforeData = beforeSnap.exists()
           ? (beforeSnap.data() as {
               checkedMissionIds?: string[];
@@ -345,7 +364,7 @@ export function EventMissions({ eventId }: Props) {
 
         for (const m of active) {
           if (m.type === "checkbox") {
-            const nowChecked = checkedMissionIds.includes(m.id);
+            const nowChecked = checkedSnapshot.includes(m.id);
             const wasChecked = prevChecked.has(m.id);
             if (nowChecked !== wasChecked) {
               await addDoc(collection(db, "events", eventId, "pointLogs"), {
@@ -359,10 +378,11 @@ export function EventMissions({ eventId }: Props) {
                 createdAt: serverTimestamp(),
                 createdBy: authUid,
               });
+              if (isStale()) return;
             }
           } else {
             const prev = Math.max(0, Math.floor(prevNumbers[m.id] ?? 0));
-            const curr = Math.max(0, Math.floor(numberValues[m.id] ?? 0));
+            const curr = Math.max(0, Math.floor(numbersSnapshot[m.id] ?? 0));
             if (prev !== curr) {
               const delta = (curr - prev) * m.pointPerUnit;
               await addDoc(collection(db, "events", eventId, "pointLogs"), {
@@ -376,6 +396,7 @@ export function EventMissions({ eventId }: Props) {
                 createdAt: serverTimestamp(),
                 createdBy: authUid,
               });
+              if (isStale()) return;
             }
           }
         }
@@ -386,16 +407,19 @@ export function EventMissions({ eventId }: Props) {
             authUid,
             userId: participantDocId,
             eventId,
-            checkedMissionIds: checkedMissionIds.map(String),
-            numberValues: numberValuesToFirestore(numberValues),
+            checkedMissionIds: checkedSnapshot.map(String),
+            numberValues: numberValuesToFirestore(numbersSnapshot),
             totalPoints: computedTotal,
             updatedAt: serverTimestamp(),
           },
           { merge: true },
         );
+        if (isStale()) return;
 
         const participantRefForPts = doc(db, "events", eventId, "participants", participantDocId);
         const participantSnapForPts = await getDoc(participantRefForPts);
+        if (isStale()) return;
+
         const quizPtsRaw = participantSnapForPts.data()?.quizPoints;
         const quizPts = typeof quizPtsRaw === "number" && Number.isFinite(quizPtsRaw) ? quizPtsRaw : 0;
         const bingoPtsRaw = participantSnapForPts.data()?.bingoPoints;
@@ -413,6 +437,7 @@ export function EventMissions({ eventId }: Props) {
           },
           { merge: true },
         );
+        if (isStale()) return;
 
         await setDoc(
           doc(db, "users", authUid),
@@ -422,7 +447,11 @@ export function EventMissions({ eventId }: Props) {
           },
           { merge: true },
         );
+        if (isStale()) return;
+
+        setErrorMessage("");
       } catch (error) {
+        if (isStale()) return;
         console.error("missionProgress save error:", error);
         setErrorMessage("通信に失敗しました。もう一度お試しください。");
       }
@@ -527,22 +556,38 @@ export function EventMissions({ eventId }: Props) {
 
                     <div className="mt-4 border-t border-zinc-100 pt-4">
                       {mission.type === "checkbox" ? (
-                        <label className="flex cursor-pointer items-center gap-3 touch-manipulation">
-                          <input
-                            type="checkbox"
-                            className="h-6 w-6 shrink-0 rounded-md border-2 border-zinc-300 accent-[#7C3AED]"
-                            checked={checkedMissionIds.includes(mission.id)}
-                            disabled={!isReady || !!errorMessage || isClosed}
-                            onChange={() => {
-                              setCheckedMissionIds((prev) =>
-                                prev.includes(mission.id)
-                                  ? prev.filter((id) => id !== mission.id)
-                                  : [...prev, mission.id],
-                              );
-                            }}
-                          />
-                          <span className="text-sm font-medium text-[#111827]">達成したらチェック</span>
-                        </label>
+                        (() => {
+                          const isChecked = checkedMissionIds.includes(mission.id);
+                          return (
+                            <button
+                              type="button"
+                              role="checkbox"
+                              aria-checked={isChecked}
+                              aria-label={
+                                isChecked
+                                  ? `${mission.title}の達成を取り消す`
+                                  : `${mission.title}を達成済みにする`
+                              }
+                              disabled={!isReady || isClosed}
+                              onClick={() => toggleMissionCheck(mission.id)}
+                              className="flex w-full cursor-pointer items-center gap-3 touch-manipulation text-left disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <span
+                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
+                                  isChecked
+                                    ? "border-[#7C3AED] bg-[#7C3AED]"
+                                    : "border-zinc-300 bg-white"
+                                }`}
+                                aria-hidden
+                              >
+                                {isChecked ? (
+                                  <Check className="h-4 w-4 text-white" strokeWidth={3} />
+                                ) : null}
+                              </span>
+                              <span className="text-sm font-medium text-[#111827]">達成したらチェック</span>
+                            </button>
+                          );
+                        })()
                       ) : (
                         (() => {
                           const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
@@ -555,7 +600,7 @@ export function EventMissions({ eventId }: Props) {
                               <div className="flex items-center justify-center gap-6">
                                 <button
                                   type="button"
-                                  disabled={!isReady || !!errorMessage || isClosed || count === 0}
+                                  disabled={!isReady || isClosed || count === 0}
                                   aria-label={`${mission.title}の数量を1減らす`}
                                   onClick={() =>
                                     setNumberValues((prev) => {
@@ -579,7 +624,7 @@ export function EventMissions({ eventId }: Props) {
                                 </span>
                                 <button
                                   type="button"
-                                  disabled={!isReady || !!errorMessage || isClosed}
+                                  disabled={!isReady || isClosed}
                                   aria-label={`${mission.title}の数量を1増やす`}
                                   onClick={() =>
                                     setNumberValues((prev) => {
