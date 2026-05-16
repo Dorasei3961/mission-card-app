@@ -4,10 +4,10 @@ import { useMemo } from "react";
 import { ROULETTE_SEGMENT_COLORS } from "../../../lib/roulette-schema";
 import {
   rouletteSegmentDisplayText,
-  segmentLabelCenterStyle,
   segmentLabelFontSizePx,
   segmentLabelOffsetPx,
   segmentLabelRadiusPx,
+  segmentLabelTransformStyle,
   segmentTextMaxWidthPx,
   segmentWedgeClipPath,
 } from "../../../lib/roulette-display";
@@ -46,12 +46,9 @@ export function RouletteWheelView({
   const labelRadius = segmentLabelRadiusPx(outerRadius, innerHubRadius);
   const labelMaxWidth = segmentTextMaxWidthPx(n, labelRadius);
   const labelFontSize = segmentLabelFontSizePx(n);
-  /** 内円端を clip 内径に（外周半径比で % 化） */
   const clipInnerPercent = (innerHubRadius / outerRadius) * 50;
-  const labelTransition =
-    transitionMs > 0
-      ? `left ${transitionMs}ms ${transitionEasing}, top ${transitionMs}ms ${transitionEasing}`
-      : "none";
+  const spinTransition =
+    transitionMs > 0 ? `transform ${transitionMs}ms ${transitionEasing}` : "none";
 
   const gradient = useMemo(() => {
     if (n === 0) return "conic-gradient(from -90deg, #E5E7EB 0deg 360deg)";
@@ -82,8 +79,7 @@ export function RouletteWheelView({
           className="absolute inset-0 rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)] will-change-transform"
           style={{
             transform: `rotate(${rotationDeg}deg)`,
-            transition:
-              transitionMs > 0 ? `transform ${transitionMs}ms ${transitionEasing}` : "none",
+            transition: spinTransition,
             background: gradient,
           }}
         />
@@ -91,7 +87,7 @@ export function RouletteWheelView({
         <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden rounded-full">
           {segments.map((item, i) => {
             const { x, y } = segmentLabelOffsetPx(i, n, rotationDeg, labelRadius);
-            const pos = segmentLabelCenterStyle(WHEEL_PX, x, y);
+            const pos = segmentLabelTransformStyle(x, y);
             const clip = segmentWedgeClipPath(i, n, rotationDeg, clipInnerPercent);
             const displayText = rouletteSegmentDisplayText(item, n);
             const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
@@ -111,8 +107,8 @@ export function RouletteWheelView({
                     ...pos,
                     maxWidth: labelMaxWidth,
                     width: "max-content",
-                    transition: labelTransition,
                     textAlign: "center",
+                    transition: spinTransition,
                   }}
                 >
                   <span

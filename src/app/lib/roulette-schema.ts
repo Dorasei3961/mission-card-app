@@ -180,8 +180,8 @@ export function clockwiseEndRotationForSpin(
   return end;
 }
 
-/** メイン回転：1本の ease-out のみ（再加速に見えないよう単一 transition） */
-export const ROULETTE_SPIN_TRANSITION_EASING = "cubic-bezier(0.08, 0.85, 0.18, 1)";
+/** メイン回転：easeOutCubic（減速して止まる演出） */
+export const ROULETTE_SPIN_TRANSITION_EASING = "cubic-bezier(0.33, 1, 0.68, 1)";
 
 export function normalizeRouletteSettings(data: unknown): RouletteSettings {
   if (!data || typeof data !== "object") return { ...DEFAULT_ROULETTE_SETTINGS };

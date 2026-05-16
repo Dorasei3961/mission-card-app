@@ -14,22 +14,21 @@ export function rouletteSegmentDisplayText(
   return `${primary.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
-/** セグメント中心角（deg）。conic-gradient(from -90deg) と同一基準 */
+/**
+ * セグメント中心角（deg）
+ * centerAngle = startAngle + segmentAngle / 2
+ * conic-gradient(from -90deg) と同一
+ */
 export function segmentCenterAngleDeg(segmentIndex: number, segmentCount: number): number {
   if (segmentCount <= 0) return 0;
-  const seg = 360 / segmentCount;
-  return -90 + (segmentIndex + 0.5) * seg;
+  const segmentAngle = 360 / segmentCount;
+  const startAngle = -90 + segmentIndex * segmentAngle;
+  return startAngle + segmentAngle / 2;
 }
 
-/** 色リング（内円〜外円）の扇形重心半径 — 見た目の中央に近づける */
+/** 内円と外円の中間: (innerRadius + outerRadius) / 2 */
 export function segmentLabelRadiusPx(outerRadiusPx: number, innerHubRadiusPx: number): number {
-  const r1 = innerHubRadiusPx;
-  const r2 = outerRadiusPx;
-  if (r2 <= r1) return r1;
-  const r1sq = r1 * r1;
-  const r2sq = r2 * r2;
-  const centroid = ((2 / 3) * (r2 * r2sq - r1 * r1sq)) / (r2sq - r1sq);
-  return Math.min(r2 - 6, Math.max(r1 + 10, centroid));
+  return (innerHubRadiusPx + outerRadiusPx) / 2;
 }
 
 /** 横向きテキストがくさび内に収まる最大幅（px） */
@@ -49,10 +48,7 @@ function polarToPercent(deg: number, radiusPercent: number): string {
   return `${x.toFixed(2)}% ${y.toFixed(2)}%`;
 }
 
-/**
- * 環状くさび clip-path（境界線・START 内円を避ける）
- * @param innerRadiusPercent 外周半径に対する内側半径（0〜50）
- */
+/** 環状くさび clip-path（境界・内円を避ける） */
 export function segmentWedgeClipPath(
   segmentIndex: number,
   segmentCount: number,
@@ -70,26 +66,23 @@ export function segmentWedgeClipPath(
   return `polygon(${polarToPercent(start, inner)}, ${polarToPercent(end, inner)}, ${polarToPercent(end, outer)}, ${polarToPercent(start, outer)})`;
 }
 
-/** テキスト中心基準の left / top（rotate なし） */
-export function segmentLabelCenterStyle(
-  wheelSizePx: number,
-  offsetX: number,
-  offsetY: number,
-): {
+/** テキスト中心基準（translate のみ・rotate なし） */
+export function segmentLabelTransformStyle(offsetX: number, offsetY: number): {
   left: string;
   top: string;
   transform: string;
 } {
-  const cx = wheelSizePx / 2;
-  const cy = wheelSizePx / 2;
   return {
-    left: `${cx + offsetX}px`,
-    top: `${cy + offsetY}px`,
-    transform: "translate(-50%, -50%)",
+    left: "50%",
+    top: "50%",
+    transform: `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
   };
 }
 
-/** 盤面回転を反映したラベル座標（水平表示・rotate なし） */
+/**
+ * 中心角 + 半径からオフセット（px）
+ * x = cos(θ) * r, y = sin(θ) * r
+ */
 export function segmentLabelOffsetPx(
   segmentIndex: number,
   segmentCount: number,
