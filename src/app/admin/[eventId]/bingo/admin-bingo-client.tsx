@@ -21,6 +21,7 @@ import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-mi
 import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
+  BINGO_GRID_PRESETS,
   DEFAULT_BINGO_SETTINGS,
   DEFAULT_BINGO_STATE,
   normalizeBingoSettings,
@@ -245,26 +246,32 @@ export function AdminBingoClient({ eventId }: Props) {
     if (nextSize === settings.gridSize) return;
     let proceed = true;
     if (cards.length > 0) {
-      proceed = window.confirm("変更するとカードを再生成します。続行しますか？");
+      proceed = window.confirm(
+        "カードサイズを変更すると、全参加者のビンゴカードを新しいサイズで再生成します。続行しますか？",
+      );
     }
     if (!proceed) return;
     setBusy(true);
     try {
       const settingsRef = doc(db, "events", eventId, "bingoSettings", "main");
       const stateRef = doc(db, "events", eventId, "bingoState", "main");
+      const preset = BINGO_GRID_PRESETS[nextSize];
       await setDoc(
         settingsRef,
-        { gridSize: nextSize, updatedAt: serverTimestamp() },
+        {
+          gridSize: preset.gridSize,
+          minNumber: preset.minNumber,
+          maxNumber: preset.maxNumber,
+          updatedAt: serverTimestamp(),
+        },
         { merge: true },
       );
-      if (cards.length > 0) {
-        await setDoc(
-          stateRef,
-          { ...DEFAULT_BINGO_STATE, updatedAt: serverTimestamp() },
-          { merge: true },
-        );
-        await clearCards();
-      }
+      await setDoc(
+        stateRef,
+        { ...DEFAULT_BINGO_STATE, updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      await clearCards();
     } finally {
       setBusy(false);
     }

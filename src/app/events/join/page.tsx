@@ -19,14 +19,11 @@ import { auth, db } from "../../lib/firebase";
 import { buildJoinPasswordForgotMailtoHref } from "../../lib/contact-mail";
 import { setEventSession } from "../../lib/event-session";
 import { isActiveEventRecord } from "../../lib/event-list";
-
-function normalizeParticipantKey(name: string): string {
-  const normalized = name
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/\s+/g, "");
-  return normalized || "guest";
-}
+import {
+  findExistingParticipantByName,
+  normalizeParticipantKey,
+  trimParticipantDisplayName,
+} from "../../lib/participant-join";
 
 type ActiveEventRow = { id: string; title: string; creatorName: string };
 
@@ -125,7 +122,7 @@ export default function EventJoinPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const name = participantName.trim();
+    const name = trimParticipantDisplayName(participantName);
     const title = eventName.trim();
     if (!name || (!title && !hasCodeInUrl)) {
       setMessage("イベント名と参加者名を入力してください。");
@@ -194,10 +191,13 @@ export default function EventJoinPage() {
         return;
       }
 
-      const participantKey = normalizeParticipantKey(name);
-      const participantRef = doc(db, "events", eventId, "participants", participantKey);
-      const participantSnap = await getDoc(participantRef);
-      if (participantSnap.exists()) {
+      const existing = await findExistingParticipantByName(eventId, name);
+      const participantDocId = existing
+        ? existing.participantDocId
+        : normalizeParticipantKey(name);
+      const participantRef = doc(db, "events", eventId, "participants", participantDocId);
+
+      if (existing) {
         await setDoc(
           participantRef,
           {
@@ -208,17 +208,30 @@ export default function EventJoinPage() {
           { merge: true },
         );
       } else {
-        await setDoc(participantRef, {
-          name,
-          authUid,
-          totalPoints: 0,
-          completedCount: 0,
-          joinedAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        const participantSnap = await getDoc(participantRef);
+        if (participantSnap.exists()) {
+          await setDoc(
+            participantRef,
+            {
+              name,
+              authUid,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } else {
+          await setDoc(participantRef, {
+            name,
+            authUid,
+            totalPoints: 0,
+            completedCount: 0,
+            joinedAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
 
-      setEventSession({ eventId, participantName: name, uid: participantKey });
+      setEventSession({ eventId, participantName: name, uid: participantDocId });
       router.push(`/events/${eventId}`);
     } catch (err) {
       console.error(err);

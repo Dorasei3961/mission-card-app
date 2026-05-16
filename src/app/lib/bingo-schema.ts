@@ -32,11 +32,27 @@ export type BingoCardDoc = {
 export const DEFAULT_BINGO_SETTINGS: BingoSettings = {
   enabled: true,
   minNumber: 1,
-  maxNumber: 100,
+  maxNumber: 25,
   gridSize: 3,
   freeCenter: true,
   bingoPoint: 100,
 };
+
+/** グリッドサイズごとの推奨数字範囲（3×3: 1–25 / 5×5: 1–75） */
+export const BINGO_GRID_PRESETS: Record<3 | 5, Pick<BingoSettings, "gridSize" | "minNumber" | "maxNumber">> = {
+  3: { gridSize: 3, minNumber: 1, maxNumber: 25 },
+  5: { gridSize: 5, minNumber: 1, maxNumber: 75 },
+};
+
+export function bingoCardNeedsRegeneration(
+  cardGridSize: unknown,
+  numbersLength: number,
+  settingsGridSize: 3 | 5,
+): boolean {
+  const size = cardGridSize === 5 ? 5 : 3;
+  const expectedCells = settingsGridSize * settingsGridSize;
+  return size !== settingsGridSize || numbersLength !== expectedCells;
+}
 
 export const DEFAULT_BINGO_STATE: BingoState = {
   currentNumber: null,

@@ -19,6 +19,7 @@ import { auth, db } from "../../../lib/firebase";
 import { clearEventScopedStorage, getEventSession, setEventSession } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
+  bingoCardNeedsRegeneration,
   buildBingoLines,
   centerIndex,
   DEFAULT_BINGO_SETTINGS,
@@ -208,44 +209,54 @@ export function ParticipantBingoClient({ eventId }: Props) {
   useEffect(() => {
     if (!participantId) return;
     const cardRef = doc(db, "events", eventId, "bingoCards", participantId);
+    const targetGrid = settings.gridSize;
+    const targetMin = settings.minNumber;
+    const targetMax = settings.maxNumber;
+    const drawn = state.drawnNumbers;
+
+    const writeFreshCard = async (preserveAwarded: boolean) => {
+      const createdNumbers = generateBingoCardNumbers(targetGrid, targetMin, targetMax);
+      const initialEval = evaluateCard(createdNumbers, targetGrid, drawn);
+      const base: Omit<BingoCardDoc, "createdAt" | "updatedAt"> = {
+        participantId,
+        participantName: participantName || "参加者",
+        gridSize: targetGrid,
+        numbers: createdNumbers,
+        markedNumbers: initialEval.markedNumbers,
+        bingoLines: initialEval.bingoLines,
+        reachLines: initialEval.reachLines,
+        bingoAwarded: preserveAwarded,
+      };
+      await setDoc(
+        cardRef,
+        {
+          ...base,
+          updatedAt: serverTimestamp(),
+          ...(!preserveAwarded ? { createdAt: serverTimestamp() } : {}),
+        },
+        { merge: true },
+      );
+      setCard(base);
+    };
+
     const unsub = onSnapshot(cardRef, async (snap) => {
       if (!snap.exists()) {
-        const createdNumbers = generateBingoCardNumbers(
-          settings.gridSize,
-          settings.minNumber,
-          settings.maxNumber,
-        );
-        const initialEval = evaluateCard(createdNumbers, settings.gridSize, state.drawnNumbers);
-        const base: Omit<BingoCardDoc, "createdAt" | "updatedAt"> = {
-          participantId,
-          participantName: participantName || "参加者",
-          gridSize: settings.gridSize,
-          numbers: createdNumbers,
-          markedNumbers: initialEval.markedNumbers,
-          bingoLines: initialEval.bingoLines,
-          reachLines: initialEval.reachLines,
-          bingoAwarded: false,
-        };
-        await setDoc(
-          cardRef,
-          {
-            ...base,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        );
-        setCard(base);
+        await writeFreshCard(false);
         return;
       }
       const raw = snap.data() as Record<string, unknown>;
+      const numbers = Array.isArray(raw.numbers)
+        ? raw.numbers.map((v) => (v === "FREE" ? "FREE" : Number(v))) as BingoCellValue[]
+        : [];
+      if (bingoCardNeedsRegeneration(raw.gridSize, numbers.length, targetGrid)) {
+        await writeFreshCard(false);
+        return;
+      }
       const normalized: BingoCardDoc = {
         participantId: String(raw.participantId ?? participantId),
         participantName: String(raw.participantName ?? participantName ?? "参加者"),
-        gridSize: raw.gridSize === 5 ? 5 : 3,
-        numbers: Array.isArray(raw.numbers)
-          ? raw.numbers.map((v) => (v === "FREE" ? "FREE" : Number(v))) as BingoCellValue[]
-          : [],
+        gridSize: targetGrid,
+        numbers,
         markedNumbers: Array.isArray(raw.markedNumbers)
           ? raw.markedNumbers.map((v) => Number(v)).filter((v) => Number.isFinite(v))
           : [],
@@ -330,8 +341,8 @@ export function ParticipantBingoClient({ eventId }: Props) {
 
   const drawnNewestFirst = useMemo(() => [...state.drawnNumbers].reverse(), [state.drawnNumbers]);
 
-  const gridTemplate = card?.gridSize === 5 ? "grid-cols-5" : "grid-cols-3";
-  const cellSize = card?.gridSize === 5 ? "h-14 text-base" : "h-20 text-xl";
+  const displayGridSize = card?.gridSize ?? settings.gridSize;
+  const cellSize = displayGridSize === 5 ? "h-14 text-base" : "h-20 text-xl";
 
   if (!ready) {
     return (
@@ -392,9 +403,12 @@ export function ParticipantBingoClient({ eventId }: Props) {
           <>
             <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
               <h2 className="text-base font-bold text-[#111827]">
-                あなたのビンゴカード（{card.gridSize}×{card.gridSize}）
+                あなたのビンゴカード（{displayGridSize}×{displayGridSize}）
               </h2>
-              <div className={`mt-4 grid ${gridTemplate} gap-2`}>
+              <div
+                className="mt-4 grid gap-2"
+                style={{ gridTemplateColumns: `repeat(${displayGridSize}, minmax(0, 1fr))` }}
+              >
                 {card.numbers.map((value, idx) => {
                   const isFree = value === "FREE";
                   const isHit = evalResult.hitIndices.has(idx);

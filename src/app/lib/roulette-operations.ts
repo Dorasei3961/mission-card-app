@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -113,9 +114,6 @@ export async function finalizeRouletteSpin(
   const n = activeSorted.length;
 
   try {
-    let deactivateItemId: string | null = null;
-    let removeWinner = false;
-
     const committed = await runTransaction(db, async (tx) => {
       const stSnap = await tx.get(stateRef);
       const setSnap = await tx.get(settingsRef);
@@ -161,9 +159,6 @@ export async function finalizeRouletteSpin(
         fullSpins,
       );
 
-      removeWinner = settings.removeWinnerAfterSpin;
-      deactivateItemId = winnerRow.id;
-
       tx.set(
         stateRef,
         {
@@ -190,16 +185,6 @@ export async function finalizeRouletteSpin(
 
       return true;
     });
-    if (committed && removeWinner && deactivateItemId) {
-      try {
-        await updateDoc(doc(db, "events", eventId, "rouletteItems", deactivateItemId), {
-          active: false,
-          updatedAt: serverTimestamp(),
-        });
-      } catch (e) {
-        console.warn("[roulette] deactivate item skipped", e);
-      }
-    }
     return committed;
   } catch (e) {
     console.error("[roulette] finalize failed", e);
@@ -207,7 +192,42 @@ export async function finalizeRouletteSpin(
   }
 }
 
-/** 結果のみリセット（履歴は残す） */
+/**
+ * 当選結果を確認して idle に戻す。
+ * removeWinnerAfterSpin が ON のときのみ、ここで当選景品を除外（active: false）する。
+ */
+export async function acknowledgeRouletteResult(
+  db: Firestore,
+  eventId: string,
+  removeWinnerAfterSpin: boolean,
+): Promise<boolean> {
+  const stateRef = doc(db, "events", eventId, "rouletteState", "main");
+  try {
+    const stSnap = await getDoc(stateRef);
+    const st = normalizeRouletteState(stSnap.data());
+    if (st.status !== "finished") return false;
+
+    const winnerItemId = st.winnerItemId;
+    await resetRouletteResult(db, eventId);
+
+    if (removeWinnerAfterSpin && winnerItemId) {
+      try {
+        await updateDoc(doc(db, "events", eventId, "rouletteItems", winnerItemId), {
+          active: false,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn("[roulette] acknowledge deactivate skipped", e);
+      }
+    }
+    return true;
+  } catch (e) {
+    console.error("[roulette] acknowledge failed", e);
+    return false;
+  }
+}
+
+/** 結果のみリセット（履歴は残す・景品除外は行わない） */
 export async function resetRouletteResult(db: Firestore, eventId: string): Promise<void> {
   const stateRef = doc(db, "events", eventId, "rouletteState", "main");
   await setDoc(
@@ -232,7 +252,6 @@ export async function forceRouletteWinner(
   eventId: string,
   itemId: string,
   itemsSorted: RouletteItemRow[],
-  settings: { removeWinnerAfterSpin: boolean },
 ): Promise<boolean> {
   const stateRef = doc(db, "events", eventId, "rouletteState", "main");
   const activeSorted = itemsSorted.filter((i) => i.active);
@@ -277,18 +296,7 @@ export async function forceRouletteWinner(
         createdAt: serverTimestamp(),
       });
     });
-    if (!wrote) return false;
-    if (settings.removeWinnerAfterSpin && winnerRow.id) {
-      try {
-        await updateDoc(doc(db, "events", eventId, "rouletteItems", winnerRow.id), {
-          active: false,
-          updatedAt: serverTimestamp(),
-        });
-      } catch (e) {
-        console.warn("[roulette] force winner deactivate skipped", e);
-      }
-    }
-    return true;
+    return wrote;
   } catch (e) {
     console.error("[roulette] force winner failed", e);
     return false;

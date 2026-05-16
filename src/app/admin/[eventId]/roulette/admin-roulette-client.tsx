@@ -33,6 +33,7 @@ import {
   ROULETTE_SPIN_TRANSITION_EASING,
 } from "../../../lib/roulette-schema";
 import {
+  acknowledgeRouletteResult,
   clearAllRouletteHistory,
   finalizeRouletteSpin,
   forceRouletteWinner,
@@ -254,7 +255,7 @@ export function AdminRouletteClient({ eventId }: Props) {
   const centerText = useMemo(() => {
     if (state.status === "idle") return "START";
     if (state.status === "spinning") return "…";
-    return state.winnerItemLabel ?? "結果";
+    return state.winnerItemLabel ?? "当選";
   }, [state.status, state.winnerItemLabel]);
 
   const handleStart = async () => {
@@ -262,6 +263,19 @@ export function AdminRouletteClient({ eventId }: Props) {
     setBusy(true);
     try {
       await startRouletteSpin(db, eventId, "admin");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleConfirmResult = async () => {
+    if (state.status !== "finished" || busy) return;
+    setBusy(true);
+    try {
+      const ok = await acknowledgeRouletteResult(db, eventId, settings.removeWinnerAfterSpin);
+      if (!ok) {
+        window.alert("結果の確認処理に失敗しました。もう一度お試しください。");
+      }
     } finally {
       setBusy(false);
     }
@@ -281,6 +295,7 @@ export function AdminRouletteClient({ eventId }: Props) {
   };
 
   const handleManualPick = async () => {
+    if (state.status !== "idle" || busy) return;
     const sorted = sortRouletteItemsByOrder(itemsRef.current.filter((i) => i.active));
     if (sorted.length === 0) {
       window.alert("有効な候補がありません。");
@@ -297,9 +312,7 @@ export function AdminRouletteClient({ eventId }: Props) {
     const picked = sorted[n - 1];
     setBusy(true);
     try {
-      await forceRouletteWinner(db, eventId, picked.id, itemsRef.current, {
-        removeWinnerAfterSpin: settings.removeWinnerAfterSpin,
-      });
+      await forceRouletteWinner(db, eventId, picked.id, itemsRef.current);
     } finally {
       setBusy(false);
     }
@@ -409,7 +422,8 @@ export function AdminRouletteClient({ eventId }: Props) {
 
   const historyPreview = history.slice(0, 3);
 
-  const spinAllowed = state.status !== "spinning" && !busy;
+  const spinAllowed = state.status === "idle" && !busy;
+  const showingResult = state.status === "finished";
 
   if (allowed !== true) {
     return (
@@ -481,21 +495,44 @@ export function AdminRouletteClient({ eventId }: Props) {
             />
           </div>
 
-          <button
-            type="button"
-            disabled={!spinAllowed}
-            onClick={() => void handleStart()}
-            className="mt-8 flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#9333EA] text-lg font-bold text-white shadow-[0_8px_24px_rgba(124,58,237,0.35)] disabled:opacity-45 touch-manipulation"
-          >
-            <Play className="h-7 w-7 shrink-0 text-white" strokeWidth={2.25} fill="currentColor" aria-hidden />
-            ルーレットを開始する
-          </button>
+          {showingResult ? (
+            <div className="mt-8 space-y-4">
+              <div className="rounded-2xl border-2 border-amber-200 bg-gradient-to-b from-amber-50 to-white px-4 py-6 text-center shadow-[0_8px_24px_rgba(251,191,36,0.25)]">
+                <p className="text-4xl font-black tracking-tight text-[#F59E0B] drop-shadow-sm">当選！</p>
+                <p className="mt-4 text-2xl font-black text-[#111827]">{state.winnerItemLabel ?? "—"}</p>
+                <p className="mt-2 text-lg font-semibold text-[#6B7280]">{state.winnerItemName ?? ""}</p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void handleConfirmResult()}
+                className="flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#9333EA] text-base font-bold text-white shadow-[0_8px_24px_rgba(124,58,237,0.35)] disabled:opacity-45 touch-manipulation"
+              >
+                確認して次へ
+              </button>
+              {settings.removeWinnerAfterSpin ? (
+                <p className="text-center text-[11px] font-medium text-[#6B7280]">
+                  次へ進むと、この景品は候補から除外されます
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!spinAllowed}
+              onClick={() => void handleStart()}
+              className="mt-8 flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#9333EA] text-lg font-bold text-white shadow-[0_8px_24px_rgba(124,58,237,0.35)] disabled:opacity-45 touch-manipulation"
+            >
+              <Play className="h-7 w-7 shrink-0 text-white" strokeWidth={2.25} fill="currentColor" aria-hidden />
+              ルーレットを開始する
+            </button>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => void handleManualPick()}
-              disabled={busy}
+              disabled={!spinAllowed}
               className="rounded-2xl border border-[#E9D5FF] bg-white py-3 text-sm font-bold text-[#7C3AED] disabled:opacity-45 touch-manipulation"
             >
               番号/候補を選択する
