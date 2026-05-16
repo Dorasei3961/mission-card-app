@@ -94,6 +94,7 @@ service cloud.firestore {
           && (
             isEventOwner(eventId)
             || progressId == request.auth.uid
+            || resource == null
             || (
               resource.data.authUid is string
               && resource.data.authUid == request.auth.uid

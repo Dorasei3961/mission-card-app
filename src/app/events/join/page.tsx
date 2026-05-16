@@ -199,6 +199,15 @@ export default function EventJoinPage() {
       const participantSnap = await getDoc(participantRef);
       if (participantSnap.exists()) {
         const existing = participantSnap.data() as { authUid?: unknown };
+        const existingAuthUid =
+          typeof existing.authUid === "string" ? existing.authUid.trim() : "";
+        if (existingAuthUid && existingAuthUid !== authUid) {
+          setMessage(
+            "この参加者名は別の端末で使用されています。別の名前で参加するか、運営に確認してください。",
+          );
+          setPending(false);
+          return;
+        }
         const patch: {
           name: string;
           updatedAt: ReturnType<typeof serverTimestamp>;
@@ -207,7 +216,7 @@ export default function EventJoinPage() {
           name,
           updatedAt: serverTimestamp(),
         };
-        if (typeof existing.authUid !== "string" || !existing.authUid.trim()) {
+        if (!existingAuthUid) {
           patch.authUid = authUid;
         }
         await setDoc(participantRef, patch, { merge: true });

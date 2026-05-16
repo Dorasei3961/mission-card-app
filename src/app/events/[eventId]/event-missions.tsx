@@ -197,8 +197,20 @@ export function EventMissions({ eventId }: Props) {
           setIsReady(true);
           return;
         }
+        const pdata = participantSnap.data() as { name?: string; authUid?: string };
+        const storedAuthUid = typeof pdata.authUid === "string" ? pdata.authUid.trim() : "";
+        if (storedAuthUid && storedAuthUid !== user.uid) {
+          setErrorMessage(
+            "この参加者名は別の端末で登録されています。参加画面から入り直すか、運営に確認してください。",
+          );
+          setCanUseMissions(false);
+          setIsReady(true);
+          return;
+        }
+        if (!storedAuthUid) {
+          await setDoc(participantRef, { authUid: user.uid }, { merge: true });
+        }
         setCanUseMissions(true);
-        const pdata = participantSnap.data() as { name?: string };
         const name = pdata.name?.trim() ?? "";
         setParticipantName(name);
 
@@ -244,25 +256,54 @@ export function EventMissions({ eventId }: Props) {
         setMissions(missionList.length > 0 ? missionList : DEFAULT_MISSIONS_SEED);
 
         const progressRef = doc(db, "events", eventId, "missionProgress", participantKey);
-        const progressSnap = await getDoc(progressRef);
+        await setDoc(
+          progressRef,
+          {
+            authUid: user.uid,
+            userId: participantKey,
+            eventId,
+          },
+          { merge: true },
+        );
 
+        const progressSnap = await getDoc(progressRef);
         if (progressSnap.exists()) {
           const data = progressSnap.data() as {
             checkedMissionIds?: string[];
             numberValues?: Record<string, number>;
+            totalPoints?: number;
           };
+          const hasChecked = Array.isArray(data.checkedMissionIds);
+          const hasNumbers =
+            data.numberValues != null && typeof data.numberValues === "object";
+          if (!hasChecked || !hasNumbers) {
+            await setDoc(
+              progressRef,
+              {
+                checkedMissionIds: hasChecked ? data.checkedMissionIds : ([] as string[]),
+                numberValues: hasNumbers ? data.numberValues : {},
+                totalPoints: typeof data.totalPoints === "number" ? data.totalPoints : 0,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+          }
           setCheckedMissionIds(parseCheckedMissionIdsFromFirestore(data.checkedMissionIds));
           setNumberValues(parseNumberValuesFromFirestore(data.numberValues));
         } else {
-          await setDoc(progressRef, {
-            authUid: user.uid,
-            userId: participantKey,
-            eventId,
-            checkedMissionIds: [] as string[],
-            numberValues: {},
-            totalPoints: 0,
-            updatedAt: serverTimestamp(),
-          });
+          await setDoc(
+            progressRef,
+            {
+              authUid: user.uid,
+              userId: participantKey,
+              eventId,
+              checkedMissionIds: [] as string[],
+              numberValues: {},
+              totalPoints: 0,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
           setCheckedMissionIds([]);
           setNumberValues({});
         }
