@@ -43,6 +43,7 @@ import {
   startRouletteSpin,
   type RouletteItemRow,
 } from "../../../lib/roulette-operations";
+import { rouletteSegmentDisplayText, rouletteWinnerDisplayText } from "../../../lib/roulette-display";
 import { ConfettiBurst, RouletteWheelView } from "../../../events/[eventId]/roulette/roulette-wheel-view";
 import type { Timestamp } from "firebase/firestore";
 
@@ -252,11 +253,20 @@ export function AdminRouletteClient({ eventId }: Props) {
     return () => clearTimeout(handle);
   }, [eventId, state.status, state.startedAt, state.spinNonce, settings.spinDurationMs]);
 
+  const winnerFullText = useMemo(
+    () => rouletteWinnerDisplayText(state.winnerItemLabel, state.winnerItemName),
+    [state.winnerItemLabel, state.winnerItemName],
+  );
+
   const centerText = useMemo(() => {
     if (state.status === "idle") return "START";
     if (state.status === "spinning") return "…";
-    return state.winnerItemLabel ?? "当選";
-  }, [state.status, state.winnerItemLabel]);
+    if (state.status === "finished") {
+      const winner = activeSorted.find((i) => i.id === state.winnerItemId);
+      if (winner) return rouletteSegmentDisplayText(winner, 8);
+    }
+    return "当選";
+  }, [state.status, state.winnerItemId, activeSorted]);
 
   const handleStart = async () => {
     if (state.status === "spinning" || busy) return;
@@ -499,8 +509,9 @@ export function AdminRouletteClient({ eventId }: Props) {
             <div className="mt-8 space-y-4">
               <div className="rounded-2xl border-2 border-amber-200 bg-gradient-to-b from-amber-50 to-white px-4 py-6 text-center shadow-[0_8px_24px_rgba(251,191,36,0.25)]">
                 <p className="text-4xl font-black tracking-tight text-[#F59E0B] drop-shadow-sm">当選！</p>
-                <p className="mt-4 text-2xl font-black text-[#111827]">{state.winnerItemLabel ?? "—"}</p>
-                <p className="mt-2 text-lg font-semibold text-[#6B7280]">{state.winnerItemName ?? ""}</p>
+                <p className="mt-4 text-xl font-black leading-snug text-[#111827] sm:text-2xl">
+                  {winnerFullText}
+                </p>
               </div>
               <button
                 type="button"

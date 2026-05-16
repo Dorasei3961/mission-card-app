@@ -35,6 +35,7 @@ import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
+import { rouletteSegmentDisplayText, rouletteWinnerDisplayText } from "../../../lib/roulette-display";
 import { ConfettiBurst, RouletteWheelView } from "./roulette-wheel-view";
 
 type Props = { eventId: string };
@@ -231,11 +232,20 @@ export function ParticipantRouletteClient({ eventId }: Props) {
     return () => clearTimeout(handle);
   }, [eventId, state.status, state.startedAt, state.spinNonce, settings.spinDurationMs]);
 
+  const winnerFullText = useMemo(
+    () => rouletteWinnerDisplayText(state.winnerItemLabel, state.winnerItemName),
+    [state.winnerItemLabel, state.winnerItemName],
+  );
+
   const centerMainText = useMemo(() => {
     if (state.status === "idle") return "START";
     if (state.status === "spinning") return "…";
+    if (state.status === "finished") {
+      const winner = activeSorted.find((i) => i.id === state.winnerItemId);
+      if (winner) return rouletteSegmentDisplayText(winner, 8);
+    }
     return "結果";
-  }, [state.status]);
+  }, [state.status, state.winnerItemId, activeSorted]);
 
   const statusSub = useMemo(() => {
     if (state.status === "idle") return "運営の開始を待っています";
@@ -342,8 +352,9 @@ export function ParticipantRouletteClient({ eventId }: Props) {
             <div className="mt-6 space-y-4">
               <div className="text-center">
                 <p className="text-3xl font-black text-[#FBBF24] drop-shadow-sm">あたり！</p>
-                <p className="mt-3 text-lg font-bold text-[#111827]">{state.winnerItemLabel ?? "—"}</p>
-                <p className="mt-1 text-base font-semibold text-[#6B7280]">{state.winnerItemName ?? ""}</p>
+                <p className="mt-3 text-lg font-bold leading-snug text-[#111827] sm:text-xl">
+                  {winnerFullText}
+                </p>
               </div>
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-4">
                 <p className="text-center text-sm font-bold text-emerald-800">おめでとうございます！</p>

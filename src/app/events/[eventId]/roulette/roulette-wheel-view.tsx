@@ -2,13 +2,11 @@
 
 import { useMemo } from "react";
 import { ROULETTE_SEGMENT_COLORS } from "../../../lib/roulette-schema";
+import {
+  rouletteSegmentDisplayText,
+  segmentTextMaxWidthPx,
+} from "../../../lib/roulette-display";
 import type { RouletteItemRow } from "../../../lib/roulette-operations";
-
-function shortLabel(s: string, max = 5): string {
-  const t = s.trim();
-  if (t.length <= max) return t;
-  return `${t.slice(0, max)}…`;
-}
 
 export function RouletteWheelView({
   activeItems,
@@ -23,8 +21,19 @@ export function RouletteWheelView({
   transitionEasing: string;
   centerText: string;
 }) {
-  const n = activeItems.length;
+  const segments = useMemo(() => {
+    const seen = new Set<string>();
+    return activeItems.filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+  }, [activeItems]);
+
+  const n = segments.length;
   const seg = n > 0 ? 360 / n : 360;
+  const labelMaxWidth = segmentTextMaxWidthPx(n);
+  const labelFontSize = n > 8 ? 9 : n > 6 ? 10 : 11;
 
   const gradient = useMemo(() => {
     if (n === 0) return "conic-gradient(from -90deg, #E5E7EB 0deg 360deg)";
@@ -57,30 +66,39 @@ export function RouletteWheelView({
           background: gradient,
         }}
       >
-        {activeItems.map((item, i) => {
+        {segments.map((item, i) => {
           const mid = -90 + (i + 0.5) * seg;
           const rad = (mid * Math.PI) / 180;
           const r = 108;
           const x = Math.cos(rad) * r;
           const y = Math.sin(rad) * r;
+          const displayText = rouletteSegmentDisplayText(item, n);
+          const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
           return (
             <div
               key={item.id}
-              className="absolute left-1/2 top-1/2 z-[1] w-[72px] text-center text-[10px] font-bold leading-tight text-[#111827]"
+              className="absolute left-1/2 top-1/2 z-[1] flex justify-center"
               style={{
                 transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${mid + 90}deg)`,
               }}
             >
-              {shortLabel(`${item.label}`, 4)}
-              <br />
-              <span className="font-semibold text-[9px] opacity-90">{shortLabel(item.name, 5)}</span>
+              <span
+                title={fullTitle || displayText}
+                className="block overflow-hidden text-ellipsis whitespace-nowrap text-center font-bold leading-none text-[#111827]"
+                style={{
+                  maxWidth: labelMaxWidth,
+                  fontSize: labelFontSize,
+                }}
+              >
+                {displayText}
+              </span>
             </div>
           );
         })}
       </div>
       <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
         <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-[#7C3AED] shadow-[0_4px_14px_rgba(124,58,237,0.45)] ring-4 ring-white/90">
-          <span className="max-w-[68px] text-center text-xs font-black leading-tight text-white">
+          <span className="max-w-[68px] overflow-hidden text-ellipsis whitespace-nowrap text-center text-xs font-black leading-tight text-white">
             {centerText}
           </span>
         </div>

@@ -77,6 +77,12 @@ export const ROULETTE_SEGMENT_COLORS = [
   "#FECACA",
   "#DBEAFE",
   "#FED7AA",
+  "#A7F3D0",
+  "#FBCFE8",
+  "#C7D2FE",
+  "#FDE047",
+  "#99F6E4",
+  "#FCA5A5",
 ];
 
 export const INITIAL_ROULETTE_ITEMS_SEED: Omit<RouletteItem, "createdAt" | "updatedAt">[] = [
