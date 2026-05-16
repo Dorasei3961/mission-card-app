@@ -136,6 +136,12 @@ export default function EventJoinPage() {
     setMessage("");
     try {
       await signInAnonymously(auth);
+      const authUid = auth.currentUser?.uid;
+      if (!authUid) {
+        setMessage("認証に失敗しました。もう一度お試しください。");
+        setPending(false);
+        return;
+      }
 
       let eventDoc;
       if (eventIdFromUrl) {
@@ -188,27 +194,27 @@ export default function EventJoinPage() {
         return;
       }
 
-      if (!eventData.joinCode || !eventData.joinUrl) {
-        const joinCode = (eventData.joinCode?.trim() || eventData.title?.trim() || "").trim();
-        const joinUrl =
-          typeof window !== "undefined"
-            ? `${window.location.origin}/join?code=${encodeURIComponent(joinCode)}`
-            : `/join?code=${encodeURIComponent(joinCode)}`;
-        await setDoc(doc(db, "events", eventId), { joinCode, joinUrl, updatedAt: serverTimestamp() }, { merge: true });
-      }
-
       const participantKey = normalizeParticipantKey(name);
       const participantRef = doc(db, "events", eventId, "participants", participantKey);
       const participantSnap = await getDoc(participantRef);
       if (participantSnap.exists()) {
-        await setDoc(
-          participantRef,
-          { name, updatedAt: serverTimestamp() },
-          { merge: true },
-        );
+        const existing = participantSnap.data() as { authUid?: unknown };
+        const patch: {
+          name: string;
+          updatedAt: ReturnType<typeof serverTimestamp>;
+          authUid?: string;
+        } = {
+          name,
+          updatedAt: serverTimestamp(),
+        };
+        if (typeof existing.authUid !== "string" || !existing.authUid.trim()) {
+          patch.authUid = authUid;
+        }
+        await setDoc(participantRef, patch, { merge: true });
       } else {
         await setDoc(participantRef, {
           name,
+          authUid,
           totalPoints: 0,
           completedCount: 0,
           joinedAt: serverTimestamp(),
