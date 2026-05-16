@@ -6,7 +6,6 @@ import {
   rouletteSegmentDisplayText,
   segmentCenterAngleDeg,
   segmentLabelRadiusPx,
-  segmentLabelRotationDeg,
   segmentTextMaxWidthPx,
 } from "../../../lib/roulette-display";
 import type { RouletteItemRow } from "../../../lib/roulette-operations";
@@ -81,7 +80,6 @@ export function RouletteWheelView({
           const rad = (centerDeg * Math.PI) / 180;
           const x = Math.cos(rad) * labelRadius;
           const y = Math.sin(rad) * labelRadius;
-          const textRotate = segmentLabelRotationDeg(centerDeg);
           const displayText = rouletteSegmentDisplayText(item, n);
           const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
           return (
@@ -89,7 +87,7 @@ export function RouletteWheelView({
               key={item.id}
               className="absolute left-1/2 top-1/2 z-[1] flex items-center justify-center"
               style={{
-                transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${textRotate}deg)`,
+                transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${-rotationDeg}deg)`,
               }}
             >
               <span
@@ -98,7 +96,8 @@ export function RouletteWheelView({
                 style={{
                   maxWidth: labelMaxWidth,
                   fontSize: labelFontSize,
-                  wordBreak: "break-all",
+                  wordBreak: "keep-all",
+                  overflowWrap: "anywhere",
                 }}
               >
                 {displayText}

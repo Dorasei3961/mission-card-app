@@ -35,14 +35,6 @@ export function segmentCenterAngleDeg(segmentIndex: number, segmentCount: number
   return -90 + (segmentIndex + 0.5) * seg;
 }
 
-/** ラベル回転角（半径方向・上下で読みやすく） */
-export function segmentLabelRotationDeg(centerAngleDeg: number): number {
-  let deg = centerAngleDeg;
-  if (deg > 90) deg -= 180;
-  else if (deg < -90) deg += 180;
-  return deg;
-}
-
 /** 当選後の正式表示（例: 2等 Amazonギフト券 1,000円分） */
 export function rouletteWinnerDisplayText(
   label: string | null | undefined,
