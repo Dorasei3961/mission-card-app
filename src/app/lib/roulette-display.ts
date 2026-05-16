@@ -91,7 +91,7 @@ export function segmentLabelTransformInSlice(
   offsetY: number,
   parentRotationDeg: number,
 ): string {
-  return `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px) rotate(${-parentRotationDeg}deg)`;
+  return `rotate(${-parentRotationDeg}deg) translate(${offsetX}px, ${offsetY}px) translate(-50%, -50%)`;
 }
 
 /** セグメント数に応じたフォントサイズ（px） */
