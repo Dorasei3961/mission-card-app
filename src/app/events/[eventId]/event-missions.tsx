@@ -197,19 +197,8 @@ export function EventMissions({ eventId }: Props) {
           setIsReady(true);
           return;
         }
-        const pdata = participantSnap.data() as { name?: string; authUid?: string };
-        const storedAuthUid = typeof pdata.authUid === "string" ? pdata.authUid.trim() : "";
-        if (storedAuthUid && storedAuthUid !== user.uid) {
-          setErrorMessage(
-            "この参加者名は別の端末で登録されています。参加画面から入り直すか、運営に確認してください。",
-          );
-          setCanUseMissions(false);
-          setIsReady(true);
-          return;
-        }
-        if (!storedAuthUid) {
-          await setDoc(participantRef, { authUid: user.uid }, { merge: true });
-        }
+        await setDoc(participantRef, { authUid: user.uid }, { merge: true });
+        const pdata = participantSnap.data() as { name?: string };
         setCanUseMissions(true);
         const name = pdata.name?.trim() ?? "";
         setParticipantName(name);

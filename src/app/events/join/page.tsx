@@ -198,28 +198,15 @@ export default function EventJoinPage() {
       const participantRef = doc(db, "events", eventId, "participants", participantKey);
       const participantSnap = await getDoc(participantRef);
       if (participantSnap.exists()) {
-        const existing = participantSnap.data() as { authUid?: unknown };
-        const existingAuthUid =
-          typeof existing.authUid === "string" ? existing.authUid.trim() : "";
-        if (existingAuthUid && existingAuthUid !== authUid) {
-          setMessage(
-            "この参加者名は別の端末で使用されています。別の名前で参加するか、運営に確認してください。",
-          );
-          setPending(false);
-          return;
-        }
-        const patch: {
-          name: string;
-          updatedAt: ReturnType<typeof serverTimestamp>;
-          authUid?: string;
-        } = {
-          name,
-          updatedAt: serverTimestamp(),
-        };
-        if (!existingAuthUid) {
-          patch.authUid = authUid;
-        }
-        await setDoc(participantRef, patch, { merge: true });
+        await setDoc(
+          participantRef,
+          {
+            name,
+            authUid,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
       } else {
         await setDoc(participantRef, {
           name,
