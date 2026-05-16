@@ -1,6 +1,5 @@
 "use client";
 
-import { Check, ChevronRight, Target } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
@@ -23,8 +22,18 @@ import {
 } from "../../lib/mission-schema";
 import { clearEventScopedStorage, getEventSession, setEventSession } from "../../lib/event-session";
 import { resolveEventFeatures } from "../../lib/event-features";
-import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../lib/participant-ui";
+import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../lib/participant-last-page";
+import {
+  isMissionCompleted,
+  maxEarnablePoints,
+  MISSION_PAGE_BG,
+  MissionCard,
+  MissionFilterTabs,
+  type MissionFilterTab,
+  MissionPageHeader,
+  MissionSummaryBanner,
+} from "./mission-participant-ui";
 import { ParticipantBottomNav } from "./participant-bottom-nav";
 import { useParticipantRankingLink } from "./use-participant-ranking-link";
 
@@ -86,6 +95,7 @@ export function EventMissions({ eventId }: Props) {
   const [featureMissionEnabled, setFeatureMissionEnabled] = useState(true);
   /** participants.totalPoints（ミッション保存・クイズ加点と同期） */
   const [liveParticipantTotalPts, setLiveParticipantTotalPts] = useState<number | null>(null);
+  const [missionFilter, setMissionFilter] = useState<MissionFilterTab>("all");
   const saveSeqRef = useRef(0);
 
   const visibleMissions = useMemo(
@@ -111,6 +121,62 @@ export function EventMissions({ eventId }: Props) {
   }, [visibleMissions, checkedMissionIds, numberValues]);
 
   const showRankingLink = useParticipantRankingLink(eventId);
+
+  const missionCompletionById = useMemo(() => {
+    const map = new Map<number, boolean>();
+    for (const m of visibleMissions) {
+      map.set(m.id, isMissionCompleted(m, checkedMissionIds, numberValues));
+    }
+    return map;
+  }, [visibleMissions, checkedMissionIds, numberValues]);
+
+  const sortedVisibleMissions = useMemo(() => {
+    const incomplete: MissionFields[] = [];
+    const complete: MissionFields[] = [];
+    for (const m of visibleMissions) {
+      if (missionCompletionById.get(m.id)) complete.push(m);
+      else incomplete.push(m);
+    }
+    return [...incomplete, ...complete];
+  }, [visibleMissions, missionCompletionById]);
+
+  const filteredMissions = useMemo(() => {
+    if (missionFilter === "all") return sortedVisibleMissions;
+    return sortedVisibleMissions.filter((m) => {
+      const done = missionCompletionById.get(m.id) === true;
+      return missionFilter === "complete" ? done : !done;
+    });
+  }, [sortedVisibleMissions, missionFilter, missionCompletionById]);
+
+  const missionFilterCounts = useMemo(() => {
+    let complete = 0;
+    for (const m of visibleMissions) {
+      if (missionCompletionById.get(m.id)) complete += 1;
+    }
+    const all = visibleMissions.length;
+    return { all, complete, incomplete: all - complete };
+  }, [visibleMissions, missionCompletionById]);
+
+  const completedMissionCount = missionFilterCounts.complete;
+  const earnablePoints = useMemo(() => maxEarnablePoints(visibleMissions), [visibleMissions]);
+
+  const decrementMissionCount = useCallback((missionId: number) => {
+    setNumberValues((prev) => {
+      const current = Math.max(0, Math.floor(prev[missionId] ?? 0));
+      const nextValue = Math.max(0, current - 1);
+      const next = { ...prev };
+      if (nextValue === 0) delete next[missionId];
+      else next[missionId] = nextValue;
+      return next;
+    });
+  }, []);
+
+  const incrementMissionCount = useCallback((missionId: number) => {
+    setNumberValues((prev) => {
+      const current = Math.max(0, Math.floor(prev[missionId] ?? 0));
+      return { ...prev, [missionId]: current + 1 };
+    });
+  }, []);
 
   const toggleMissionCheck = useCallback(
     (missionId: number) => {
@@ -501,193 +567,71 @@ export function EventMissions({ eventId }: Props) {
     isClosed,
   ]);
 
-  const missionProgressLabel = (mission: MissionFields): string => {
-    if (mission.type === "checkbox") {
-      const done = checkedMissionIds.includes(mission.id) ? 1 : 0;
-      return `${done}/1`;
-    }
-    const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
-    return `${count}/10`;
-  };
+  const missionControlsDisabled = !isReady || isClosed;
 
   return (
-    <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
-      <main className="mx-auto flex w-full max-w-md flex-col gap-4">
-        <header>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold text-[#111827]">{eventTitle || "イベント"}</h1>
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
-                isClosed
-                  ? "bg-zinc-100 text-[#6B7280] ring-1 ring-zinc-200"
-                  : "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200"
-              }`}
-            >
-              {isClosed ? "終了" : "開催中"}
-            </span>
-          </div>
-        </header>
+    <div className={`${MISSION_PAGE_BG} px-5 pt-5 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>
+      <main className="mx-auto flex w-full max-w-[375px] flex-col gap-5">
+        <MissionPageHeader eventTitle={eventTitle} isClosed={isClosed} />
 
-        <section className="rounded-2xl border border-white/80 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-[#111827]">
-            {participantName || "参加者"}さんの合計ポイント
-          </p>
-          <p className="mt-2 text-3xl font-bold tabular-nums text-[#111827]">
-            {(liveParticipantTotalPts ?? totalPoints).toLocaleString("ja-JP")}{" "}
-            <span className="text-lg font-bold text-[#6B7280]">pt</span>
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-[#6B7280]">
-            記録した内容から自動計算された合計です。
-          </p>
-          {isClosed ? (
-            <p className="mt-3 text-xs font-bold text-[#EF4444]">このイベントは終了しました（閲覧のみ）</p>
-          ) : null}
-          {errorMessage ? (
-            <p className="mt-2 text-xs font-semibold text-[#EF4444]">{errorMessage}</p>
-          ) : null}
-        </section>
+        {canUseMissions && featureMissionEnabled ? (
+          <>
+            <MissionSummaryBanner
+              earnablePoints={earnablePoints}
+              completedCount={completedMissionCount}
+              totalCount={visibleMissions.length}
+              liveTotalPoints={liveParticipantTotalPts ?? totalPoints}
+            />
+            <MissionFilterTabs
+              active={missionFilter}
+              counts={missionFilterCounts}
+              onChange={setMissionFilter}
+            />
+          </>
+        ) : null}
 
-        <section>
-          <h2 className="text-lg font-bold text-[#111827]">ミッション一覧</h2>
-          <p className="mt-1 text-sm text-[#6B7280]">
-            すべてのミッションに挑戦してポイントを集めよう！
+        {errorMessage ? (
+          <p className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-[#EF4444]">
+            {errorMessage}
           </p>
+        ) : null}
 
+        <section className="flex flex-col gap-4">
           {canUseMissions ? (
-            <div className="mt-4 flex flex-col gap-3">
-              {featureMissionEnabled ? (
-                visibleMissions.map((mission) => (
-                  <article
+            featureMissionEnabled ? (
+              filteredMissions.length > 0 ? (
+                filteredMissions.map((mission) => (
+                  <MissionCard
                     key={mission.id}
-                    className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex gap-3">
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-[#7C3AED]">
-                        <Target className="h-6 w-6" strokeWidth={2} aria-hidden />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-base font-bold text-[#111827]">{mission.title}</h3>
-                        {mission.description.trim() ? (
-                          <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
-                            {mission.description}
-                          </p>
-                        ) : null}
-                        <p className="mt-1 text-sm font-semibold text-[#FBBF24]">
-                          {mission.type === "checkbox"
-                            ? `+${mission.points} pt`
-                            : `+${mission.pointPerUnit} pt / 回`}
-                        </p>
-                        <p className="mt-1 text-xs font-semibold text-[#7C3AED]">
-                          {missionProgressLabel(mission)} 達成
-                        </p>
-                      </div>
-                      <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-[#6B7280]" aria-hidden />
-                    </div>
-
-                    <div className="mt-4 border-t border-zinc-100 pt-4">
-                      {mission.type === "checkbox" ? (
-                        (() => {
-                          const isChecked = checkedMissionIds.includes(mission.id);
-                          return (
-                            <button
-                              type="button"
-                              role="checkbox"
-                              aria-checked={isChecked}
-                              aria-label={
-                                isChecked
-                                  ? `${mission.title}の達成を取り消す`
-                                  : `${mission.title}を達成済みにする`
-                              }
-                              disabled={!isReady || isClosed}
-                              onClick={() => toggleMissionCheck(mission.id)}
-                              className="flex w-full cursor-pointer items-center gap-3 touch-manipulation text-left disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              <span
-                                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-2 transition-colors ${
-                                  isChecked
-                                    ? "border-[#7C3AED] bg-[#7C3AED]"
-                                    : "border-zinc-300 bg-white"
-                                }`}
-                                aria-hidden
-                              >
-                                {isChecked ? (
-                                  <Check className="h-4 w-4 text-white" strokeWidth={3} />
-                                ) : null}
-                              </span>
-                              <span className="text-sm font-medium text-[#111827]">達成したらチェック</span>
-                            </button>
-                          );
-                        })()
-                      ) : (
-                        (() => {
-                          const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
-                          const linePoints = count * mission.pointPerUnit;
-                          return (
-                            <div className="flex flex-col gap-3">
-                              {mission.description.trim() ? (
-                                <p className="text-xs text-[#6B7280]">{mission.description}</p>
-                              ) : null}
-                              <div className="flex items-center justify-center gap-6">
-                                <button
-                                  type="button"
-                                  disabled={!isReady || isClosed || count === 0}
-                                  aria-label={`${mission.title}の数量を1減らす`}
-                                  onClick={() =>
-                                    setNumberValues((prev) => {
-                                      const current = Math.max(0, Math.floor(prev[mission.id] ?? 0));
-                                      const nextValue = Math.max(0, current - 1);
-                                      const next = { ...prev };
-                                      if (nextValue === 0) delete next[mission.id];
-                                      else next[mission.id] = nextValue;
-                                      return next;
-                                    })
-                                  }
-                                  className="inline-flex h-12 min-w-[48px] items-center justify-center rounded-[14px] bg-zinc-200 text-xl font-bold text-[#111827] disabled:opacity-40 touch-manipulation"
-                                >
-                                  −
-                                </button>
-                                <span
-                                  className="min-w-[3rem] text-center text-2xl font-bold tabular-nums text-[#111827]"
-                                  aria-live="polite"
-                                >
-                                  {count}
-                                </span>
-                                <button
-                                  type="button"
-                                  disabled={!isReady || isClosed}
-                                  aria-label={`${mission.title}の数量を1増やす`}
-                                  onClick={() =>
-                                    setNumberValues((prev) => {
-                                      const current = Math.max(0, Math.floor(prev[mission.id] ?? 0));
-                                      return { ...prev, [mission.id]: current + 1 };
-                                    })
-                                  }
-                                  className="inline-flex h-12 min-w-[48px] items-center justify-center rounded-[14px] bg-[#7C3AED] text-xl font-bold text-white disabled:opacity-50 touch-manipulation"
-                                >
-                                  ＋
-                                </button>
-                              </div>
-                              <p className="text-center text-sm font-bold text-[#22C55E]">
-                                +{linePoints} pt
-                              </p>
-                            </div>
-                          );
-                        })()
-                      )}
-                    </div>
-                  </article>
+                    mission={mission}
+                    completed={missionCompletionById.get(mission.id) === true}
+                    checkedMissionIds={checkedMissionIds}
+                    numberValues={numberValues}
+                    disabled={missionControlsDisabled}
+                    onToggleCheck={toggleMissionCheck}
+                    onDecrement={decrementMissionCount}
+                    onIncrement={incrementMissionCount}
+                  />
                 ))
               ) : (
-                <article className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
-                  <h3 className="text-base font-bold text-[#111827]">ミッション機能は無効です</h3>
-                  <p className="mt-2 text-sm text-[#6B7280]">
-                    このイベントではミッションが利用停止になっています。
-                  </p>
-                </article>
-              )}
-            </div>
+                <p className="rounded-[32px] border border-gray-100 bg-white p-5 text-center text-sm text-gray-500">
+                  {missionFilter === "complete"
+                    ? "達成済みのミッションはありません"
+                    : missionFilter === "incomplete"
+                      ? "未達成のミッションはありません"
+                      : "表示できるミッションがありません"}
+                </p>
+              )
+            ) : (
+              <article className="rounded-[32px] border border-gray-100 bg-white p-5 shadow-sm">
+                <h3 className="text-xl font-bold text-gray-900">ミッション機能は無効です</h3>
+                <p className="mt-2 text-sm text-gray-400">
+                  このイベントではミッションが利用停止になっています。
+                </p>
+              </article>
+            )
           ) : (
-            <p className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <p className="rounded-[32px] border border-amber-100 bg-amber-50 px-5 py-4 text-sm text-amber-900">
               参加登録が必要です。参加画面から入り直してください。
             </p>
           )}
