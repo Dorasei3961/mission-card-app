@@ -8,6 +8,8 @@ export type MissionFields = {
   type: MissionKind;
   points: number;
   pointPerUnit: number;
+  /** 数量型の達成に必要な回数（未設定時は normalize で 1） */
+  requiredCount: number;
   unitLabel: string;
   category: string;
   categoryColor: string;
@@ -40,6 +42,15 @@ export function normalizeMissionFromFirestore(
       ? data.isActive
       : Boolean(data.visible !== false && data.isActive !== false);
 
+  const requiredCountRaw = data.requiredCount;
+  const requiredCount =
+    type === "number" &&
+    typeof requiredCountRaw === "number" &&
+    Number.isFinite(requiredCountRaw) &&
+    requiredCountRaw > 0
+      ? Math.floor(requiredCountRaw)
+      : 1;
+
   return {
     id,
     order,
@@ -48,6 +59,7 @@ export function normalizeMissionFromFirestore(
     type,
     points: typeof data.points === "number" ? data.points : 0,
     pointPerUnit: typeof data.pointPerUnit === "number" ? data.pointPerUnit : 0,
+    requiredCount,
     unitLabel: String(data.unitLabel ?? ""),
     category: String(data.category ?? ""),
     categoryColor: String(data.categoryColor ?? "custom"),
@@ -65,6 +77,7 @@ export const DEFAULT_MISSIONS_SEED: MissionFields[] = [
     type: "checkbox",
     points: 10,
     pointPerUnit: 0,
+    requiredCount: 1,
     unitLabel: "",
     category: "event",
     categoryColor: "event",
@@ -78,6 +91,7 @@ export const DEFAULT_MISSIONS_SEED: MissionFields[] = [
     type: "checkbox",
     points: 20,
     pointPerUnit: 0,
+    requiredCount: 1,
     unitLabel: "",
     category: "event",
     categoryColor: "event",
@@ -91,6 +105,7 @@ export const DEFAULT_MISSIONS_SEED: MissionFields[] = [
     type: "checkbox",
     points: 30,
     pointPerUnit: 0,
+    requiredCount: 1,
     unitLabel: "",
     category: "bonus",
     categoryColor: "bonus",

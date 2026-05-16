@@ -41,6 +41,14 @@ export function missionEmoji(mission: MissionFields): string {
   return "🎯";
 }
 
+/** 数量型ミッションの達成に必要な回数 */
+export function missionRequiredCount(mission: MissionFields): number {
+  if (mission.type !== "number") return 1;
+  const n = mission.requiredCount;
+  return typeof n === "number" && n > 0 ? Math.floor(n) : 1;
+}
+
+/** チェック型・数量型共通の達成判定 */
 export function isMissionCompleted(
   mission: MissionFields,
   checkedMissionIds: number[],
@@ -49,7 +57,11 @@ export function isMissionCompleted(
   if (mission.type === "checkbox") {
     return checkedMissionIds.includes(mission.id);
   }
-  return Math.max(0, Math.floor(numberValues[mission.id] ?? 0)) > 0;
+  if (mission.type === "number") {
+    const currentValue = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
+    return currentValue >= missionRequiredCount(mission);
+  }
+  return false;
 }
 
 export function missionProgressRatio(
@@ -62,14 +74,14 @@ export function missionProgressRatio(
     return { current: done, max: 1 };
   }
   const count = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
-  return { current: count, max: 10 };
+  return { current: count, max: missionRequiredCount(mission) };
 }
 
 export function maxEarnablePoints(missions: MissionFields[]): number {
   let sum = 0;
   for (const m of missions) {
     if (m.type === "checkbox") sum += m.points;
-    else sum += m.pointPerUnit * 10;
+    else sum += m.pointPerUnit * missionRequiredCount(m);
   }
   return sum;
 }
