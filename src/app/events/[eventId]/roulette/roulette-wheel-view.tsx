@@ -46,8 +46,12 @@ export function RouletteWheelView({
   const labelRadius = segmentLabelRadiusPx(outerRadius, innerHubRadius);
   const labelMaxWidth = segmentTextMaxWidthPx(n, labelRadius);
   const labelFontSize = segmentLabelFontSizePx(n);
-  const motionTransition =
-    transitionMs > 0 ? `left ${transitionMs}ms ${transitionEasing}, top ${transitionMs}ms ${transitionEasing}` : "none";
+  /** 内円端を clip 内径に（外周半径比で % 化） */
+  const clipInnerPercent = (innerHubRadius / outerRadius) * 50;
+  const labelTransition =
+    transitionMs > 0
+      ? `left ${transitionMs}ms ${transitionEasing}, top ${transitionMs}ms ${transitionEasing}`
+      : "none";
 
   const gradient = useMemo(() => {
     if (n === 0) return "conic-gradient(from -90deg, #E5E7EB 0deg 360deg)";
@@ -84,11 +88,11 @@ export function RouletteWheelView({
           }}
         />
 
-        <div className="pointer-events-none absolute inset-0 z-[1]">
+        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden rounded-full">
           {segments.map((item, i) => {
             const { x, y } = segmentLabelOffsetPx(i, n, rotationDeg, labelRadius);
-            const pos = segmentLabelCenterStyle(x, y);
-            const clip = segmentWedgeClipPath(i, n, rotationDeg);
+            const pos = segmentLabelCenterStyle(WHEEL_PX, x, y);
+            const clip = segmentWedgeClipPath(i, n, rotationDeg, clipInnerPercent);
             const displayText = rouletteSegmentDisplayText(item, n);
             const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
 
@@ -102,19 +106,21 @@ export function RouletteWheelView({
                 }}
               >
                 <div
-                  className="absolute box-border px-1"
+                  className="absolute box-border"
                   style={{
                     ...pos,
                     maxWidth: labelMaxWidth,
-                    transition: motionTransition,
+                    width: "max-content",
+                    transition: labelTransition,
                     textAlign: "center",
                   }}
                 >
                   <span
                     title={fullTitle || displayText}
-                    className="line-clamp-2 block w-full overflow-hidden text-center font-bold leading-snug text-[#111827]"
+                    className="line-clamp-2 block overflow-hidden text-ellipsis text-center font-bold leading-snug text-[#111827]"
                     style={{
                       fontSize: labelFontSize,
+                      maxWidth: labelMaxWidth,
                       wordBreak: "keep-all",
                       overflowWrap: "anywhere",
                     }}
