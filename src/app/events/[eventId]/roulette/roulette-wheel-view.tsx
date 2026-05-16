@@ -59,7 +59,7 @@ export function RouletteWheelView({
       <div className="relative h-[272px] w-[272px] overflow-hidden rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
         {/* 色＋ラベルをセグメント単位で一体回転 */}
         <div
-          className="absolute inset-0 will-change-transform"
+          className="absolute inset-0 bg-white will-change-transform"
           style={{
             transform: `rotate(${rotationDeg}deg)`,
             transition: spinTransition,

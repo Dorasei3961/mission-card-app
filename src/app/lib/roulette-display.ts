@@ -49,8 +49,8 @@ function polarToPercent(deg: number, radiusPercent: number): string {
 }
 
 /**
- * 回転盤ローカル座標の環状くさび clip（index i の色区画と一致）
- * 親要素ごと rotate する前提なので wheelRotation は含めない
+ * 回転盤ローカル座標の環状扇形 clip（隙間なく円周を埋める）
+ * 親要素ごと rotate する前提。隣接セグメントと境界を共有し、サブピクセル隙間はわずかに重ねる。
  */
 export function segmentWedgeClipPathLocal(
   segmentIndex: number,
@@ -61,11 +61,11 @@ export function segmentWedgeClipPathLocal(
   const segmentAngle = 360 / segmentCount;
   const startAngle = -90 + segmentIndex * segmentAngle;
   const endAngle = startAngle + segmentAngle;
-  const margin = Math.min(segmentAngle * 0.09, 3.5);
-  const start = startAngle + margin;
-  const end = endAngle - margin;
+  const seamOverlapDeg = 0.35;
+  const start = startAngle - (segmentIndex === 0 ? 0 : seamOverlapDeg);
+  const end = endAngle + (segmentIndex === segmentCount - 1 ? 0 : seamOverlapDeg);
   const inner = Math.max(0, Math.min(45, innerRadiusPercent));
-  const outer = 50;
+  const outer = 50.2;
   return `polygon(${polarToPercent(start, inner)}, ${polarToPercent(end, inner)}, ${polarToPercent(end, outer)}, ${polarToPercent(start, outer)})`;
 }
 
