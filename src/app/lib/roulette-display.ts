@@ -31,14 +31,14 @@ export function segmentLabelRadiusPx(outerRadiusPx: number, innerHubRadiusPx: nu
   return (innerHubRadiusPx + outerRadiusPx) / 2;
 }
 
-/** 横向きテキストがくさび内に収まる最大幅（px） */
+/** 横向きテキストがくさび内に収まる最大幅（px）— Safari ではみ出し防止のため控えめ */
 export function segmentTextMaxWidthPx(segmentCount: number, labelRadiusPx: number): number {
   if (segmentCount <= 0) return 48;
   const segDeg = 360 / segmentCount;
   const halfRad = (segDeg / 2) * (Math.PI / 180);
-  const byChord = 2 * labelRadiusPx * Math.sin(halfRad) * 0.62;
-  const byTan = 2 * labelRadiusPx * Math.tan(halfRad) * 0.52;
-  return Math.max(22, Math.floor(Math.min(byChord, byTan)));
+  const byChord = 2 * labelRadiusPx * Math.sin(halfRad) * 0.55;
+  const byTan = 2 * labelRadiusPx * Math.tan(halfRad) * 0.48;
+  return Math.max(20, Math.floor(Math.min(byChord, byTan)));
 }
 
 function polarToPercent(deg: number, radiusPercent: number): string {
@@ -48,53 +48,50 @@ function polarToPercent(deg: number, radiusPercent: number): string {
   return `${x.toFixed(2)}% ${y.toFixed(2)}%`;
 }
 
-/** 環状くさび clip-path（境界・内円を避ける） */
-export function segmentWedgeClipPath(
+/**
+ * 回転盤ローカル座標の環状くさび clip（index i の色区画と一致）
+ * 親要素ごと rotate する前提なので wheelRotation は含めない
+ */
+export function segmentWedgeClipPathLocal(
   segmentIndex: number,
   segmentCount: number,
-  wheelRotationDeg: number,
   innerRadiusPercent: number,
 ): string {
   if (segmentCount <= 0) return "none";
-  const seg = 360 / segmentCount;
-  const mid = segmentCenterAngleDeg(segmentIndex, segmentCount) + wheelRotationDeg;
-  const angularMargin = Math.min(seg * 0.1, 4);
-  const start = mid - seg / 2 + angularMargin;
-  const end = mid + seg / 2 - angularMargin;
+  const segmentAngle = 360 / segmentCount;
+  const startAngle = -90 + segmentIndex * segmentAngle;
+  const endAngle = startAngle + segmentAngle;
+  const margin = Math.min(segmentAngle * 0.09, 3.5);
+  const start = startAngle + margin;
+  const end = endAngle - margin;
   const inner = Math.max(0, Math.min(45, innerRadiusPercent));
   const outer = 50;
   return `polygon(${polarToPercent(start, inner)}, ${polarToPercent(end, inner)}, ${polarToPercent(end, outer)}, ${polarToPercent(start, outer)})`;
 }
 
-/** テキスト中心基準（translate のみ・rotate なし） */
-export function segmentLabelTransformStyle(offsetX: number, offsetY: number): {
-  left: string;
-  top: string;
-  transform: string;
-} {
-  return {
-    left: "50%",
-    top: "50%",
-    transform: `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`,
-  };
-}
-
-/**
- * 中心角 + 半径からオフセット（px）
- * x = cos(θ) * r, y = sin(θ) * r
- */
-export function segmentLabelOffsetPx(
+/** セグメント内ラベル位置（盤ローカル・中心角） */
+export function segmentLabelOffsetLocalPx(
   segmentIndex: number,
   segmentCount: number,
-  wheelRotationDeg: number,
   labelRadiusPx: number,
 ): { x: number; y: number } {
-  const angleDeg = segmentCenterAngleDeg(segmentIndex, segmentCount) + wheelRotationDeg;
+  const angleDeg = segmentCenterAngleDeg(segmentIndex, segmentCount);
   const rad = (angleDeg * Math.PI) / 180;
   return {
     x: Math.cos(rad) * labelRadiusPx,
     y: Math.sin(rad) * labelRadiusPx,
   };
+}
+
+/**
+ * 親の回転を打ち消しつつ横向き維持（扇形と一緒に回るが文字だけ水平）
+ */
+export function segmentLabelTransformInSlice(
+  offsetX: number,
+  offsetY: number,
+  parentRotationDeg: number,
+): string {
+  return `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px) rotate(${-parentRotationDeg}deg)`;
 }
 
 /** セグメント数に応じたフォントサイズ（px） */

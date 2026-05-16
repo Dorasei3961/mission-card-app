@@ -3,15 +3,11 @@
 import { useMemo } from "react";
 import { ROULETTE_SEGMENT_COLORS } from "../../../lib/roulette-schema";
 import {
-  rouletteSegmentDisplayText,
   segmentLabelFontSizePx,
-  segmentLabelOffsetPx,
   segmentLabelRadiusPx,
-  segmentLabelTransformStyle,
-  segmentTextMaxWidthPx,
-  segmentWedgeClipPath,
 } from "../../../lib/roulette-display";
 import type { RouletteItemRow } from "../../../lib/roulette-operations";
+import { RouletteSegmentSlice } from "./roulette-segment-slice";
 
 const WHEEL_PX = 272;
 const WHEEL_BORDER_PX = 4;
@@ -40,27 +36,13 @@ export function RouletteWheelView({
   }, [activeItems]);
 
   const n = segments.length;
-  const seg = n > 0 ? 360 / n : 360;
   const outerRadius = WHEEL_PX / 2 - WHEEL_BORDER_PX;
   const innerHubRadius = HUB_PX / 2;
   const labelRadius = segmentLabelRadiusPx(outerRadius, innerHubRadius);
-  const labelMaxWidth = segmentTextMaxWidthPx(n, labelRadius);
   const labelFontSize = segmentLabelFontSizePx(n);
   const clipInnerPercent = (innerHubRadius / outerRadius) * 50;
   const spinTransition =
     transitionMs > 0 ? `transform ${transitionMs}ms ${transitionEasing}` : "none";
-
-  const gradient = useMemo(() => {
-    if (n === 0) return "conic-gradient(from -90deg, #E5E7EB 0deg 360deg)";
-    const parts: string[] = [];
-    for (let i = 0; i < n; i++) {
-      const start = i * seg;
-      const end = (i + 1) * seg;
-      const c = ROULETTE_SEGMENT_COLORS[i % ROULETTE_SEGMENT_COLORS.length];
-      parts.push(`${c} ${start}deg ${end}deg`);
-    }
-    return `conic-gradient(from -90deg, ${parts.join(", ")})`;
-  }, [n, seg]);
 
   return (
     <div className="relative mx-auto flex h-[280px] w-[280px] shrink-0 items-center justify-center">
@@ -74,59 +56,33 @@ export function RouletteWheelView({
         />
       </div>
 
-      <div className="relative h-[272px] w-[272px]">
+      <div className="relative h-[272px] w-[272px] overflow-hidden rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+        {/* 色＋ラベルをセグメント単位で一体回転 */}
         <div
-          className="absolute inset-0 rounded-full border-[4px] border-[#7C3AED] shadow-[0_8px_24px_rgba(0,0,0,0.08)] will-change-transform"
+          className="absolute inset-0 will-change-transform"
           style={{
             transform: `rotate(${rotationDeg}deg)`,
             transition: spinTransition,
-            background: gradient,
           }}
-        />
-
-        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden rounded-full">
-          {segments.map((item, i) => {
-            const { x, y } = segmentLabelOffsetPx(i, n, rotationDeg, labelRadius);
-            const pos = segmentLabelTransformStyle(x, y);
-            const clip = segmentWedgeClipPath(i, n, rotationDeg, clipInnerPercent);
-            const displayText = rouletteSegmentDisplayText(item, n);
-            const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
-
-            return (
-              <div
+        >
+          {n === 0 ? (
+            <div className="absolute inset-0 bg-[#E5E7EB]" aria-hidden />
+          ) : (
+            segments.map((item, i) => (
+              <RouletteSegmentSlice
                 key={item.id}
-                className="absolute inset-0"
-                style={{
-                  clipPath: clip,
-                  WebkitClipPath: clip,
-                }}
-              >
-                <div
-                  className="absolute box-border"
-                  style={{
-                    ...pos,
-                    maxWidth: labelMaxWidth,
-                    width: "max-content",
-                    textAlign: "center",
-                    transition: spinTransition,
-                  }}
-                >
-                  <span
-                    title={fullTitle || displayText}
-                    className="line-clamp-2 block overflow-hidden text-ellipsis text-center font-bold leading-snug text-[#111827]"
-                    style={{
-                      fontSize: labelFontSize,
-                      maxWidth: labelMaxWidth,
-                      wordBreak: "keep-all",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {displayText}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+                item={item}
+                segmentIndex={i}
+                segmentCount={n}
+                fillColor={ROULETTE_SEGMENT_COLORS[i % ROULETTE_SEGMENT_COLORS.length]}
+                labelRadiusPx={labelRadius}
+                labelFontSizePx={labelFontSize}
+                clipInnerPercent={clipInnerPercent}
+                parentRotationDeg={rotationDeg}
+                spinTransition={spinTransition}
+              />
+            ))
+          )}
         </div>
 
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
