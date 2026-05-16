@@ -73,9 +73,12 @@ service cloud.firestore {
             isEventOwner(eventId)
             || participantId == request.auth.uid
             || (
-              resource.data.authUid is string
-              && resource.data.authUid == request.auth.uid
+              request.resource.data.authUid is string
               && request.resource.data.authUid == request.auth.uid
+              && (
+                !('authUid' in resource.data)
+                || resource.data.authUid == request.auth.uid
+              )
             )
           );
 
@@ -94,6 +97,10 @@ service cloud.firestore {
             || (
               resource.data.authUid is string
               && resource.data.authUid == request.auth.uid
+            )
+            || (
+              resource.data.userId is string
+              && resource.data.userId == request.auth.uid
             )
           );
 

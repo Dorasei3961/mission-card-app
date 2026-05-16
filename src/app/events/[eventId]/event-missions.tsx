@@ -74,8 +74,11 @@ export function EventMissions({ eventId }: Props) {
   const [missions, setMissions] = useState<MissionFields[]>(DEFAULT_MISSIONS_SEED);
   const [checkedMissionIds, setCheckedMissionIds] = useState<number[]>([]);
   const [numberValues, setNumberValues] = useState<Record<number, number>>({});
-  const [userId, setUserId] = useState<string>("");
-  const [participantName, setParticipantName] = useState<string>("");
+  /** participants / missionProgress のドキュメントID（セッション由来の participantKey） */
+  const [participantDocId, setParticipantDocId] = useState("");
+  /** Firestore ルール（pointLogs / users / authUid フィールド）用 */
+  const [authUid, setAuthUid] = useState("");
+  const [participantName, setParticipantName] = useState("");
   const [isReady, setIsReady] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [canUseMissions, setCanUseMissions] = useState(false);
@@ -150,7 +153,8 @@ export function EventMissions({ eventId }: Props) {
         const session = getEventSession();
         const participantKey =
           session && session.eventId === eventId && session.uid ? session.uid : user.uid;
-        setUserId(participantKey);
+        setParticipantDocId(participantKey);
+        setAuthUid(user.uid);
 
         const eventRef = doc(db, "events", eventId);
         const eventSnap = await getDoc(eventRef);
@@ -239,7 +243,8 @@ export function EventMissions({ eventId }: Props) {
           setNumberValues(parseNumberValuesFromFirestore(data.numberValues));
         } else {
           await setDoc(progressRef, {
-            userId: user.uid,
+            authUid: user.uid,
+            userId: participantKey,
             eventId,
             checkedMissionIds: [] as string[],
             numberValues: {},
@@ -274,11 +279,11 @@ export function EventMissions({ eventId }: Props) {
   }, [eventId, router]);
 
   useEffect(() => {
-    if (!userId || !canUseMissions) {
+    if (!participantDocId || !canUseMissions) {
       setLiveParticipantTotalPts(null);
       return;
     }
-    const unsub = onSnapshot(doc(db, "events", eventId, "participants", userId), (snap) => {
+    const unsub = onSnapshot(doc(db, "events", eventId, "participants", participantDocId), (snap) => {
       if (!snap.exists()) {
         setLiveParticipantTotalPts(null);
         return;
@@ -287,7 +292,7 @@ export function EventMissions({ eventId }: Props) {
       setLiveParticipantTotalPts(typeof t === "number" && Number.isFinite(t) ? t : 0);
     });
     return () => unsub();
-  }, [eventId, userId, canUseMissions]);
+  }, [eventId, participantDocId, canUseMissions]);
 
   useEffect(() => {
     const checkboxIds = new Set(
@@ -308,7 +313,7 @@ export function EventMissions({ eventId }: Props) {
   }, [visibleMissions]);
 
   useEffect(() => {
-    if (!isReady || !userId || !canUseMissions || isClosed) return;
+    if (!isReady || !participantDocId || !authUid || !canUseMissions || isClosed) return;
 
     const saveProgress = async () => {
       try {
@@ -327,7 +332,7 @@ export function EventMissions({ eventId }: Props) {
           }
         }
 
-        const progressRef = doc(db, "events", eventId, "missionProgress", userId);
+        const progressRef = doc(db, "events", eventId, "missionProgress", participantDocId);
         const beforeSnap = await getDoc(progressRef);
         const beforeData = beforeSnap.exists()
           ? (beforeSnap.data() as {
@@ -344,7 +349,7 @@ export function EventMissions({ eventId }: Props) {
             const wasChecked = prevChecked.has(m.id);
             if (nowChecked !== wasChecked) {
               await addDoc(collection(db, "events", eventId, "pointLogs"), {
-                uid: userId,
+                uid: authUid,
                 participantName,
                 type: "mission",
                 missionId: m.id,
@@ -352,7 +357,7 @@ export function EventMissions({ eventId }: Props) {
                 point: nowChecked ? m.points : -m.points,
                 reason: nowChecked ? "ミッション達成" : "ミッション取り消し",
                 createdAt: serverTimestamp(),
-                createdBy: userId,
+                createdBy: authUid,
               });
             }
           } else {
@@ -361,7 +366,7 @@ export function EventMissions({ eventId }: Props) {
             if (prev !== curr) {
               const delta = (curr - prev) * m.pointPerUnit;
               await addDoc(collection(db, "events", eventId, "pointLogs"), {
-                uid: userId,
+                uid: authUid,
                 participantName,
                 type: "mission",
                 missionId: m.id,
@@ -369,7 +374,7 @@ export function EventMissions({ eventId }: Props) {
                 point: delta,
                 reason: `数量変更 ${prev}→${curr}`,
                 createdAt: serverTimestamp(),
-                createdBy: userId,
+                createdBy: authUid,
               });
             }
           }
@@ -378,7 +383,8 @@ export function EventMissions({ eventId }: Props) {
         await setDoc(
           progressRef,
           {
-            userId,
+            authUid,
+            userId: participantDocId,
             eventId,
             checkedMissionIds: checkedMissionIds.map(String),
             numberValues: numberValuesToFirestore(numberValues),
@@ -388,7 +394,7 @@ export function EventMissions({ eventId }: Props) {
           { merge: true },
         );
 
-        const participantRefForPts = doc(db, "events", eventId, "participants", userId);
+        const participantRefForPts = doc(db, "events", eventId, "participants", participantDocId);
         const participantSnapForPts = await getDoc(participantRefForPts);
         const quizPtsRaw = participantSnapForPts.data()?.quizPoints;
         const quizPts = typeof quizPtsRaw === "number" && Number.isFinite(quizPtsRaw) ? quizPtsRaw : 0;
@@ -399,6 +405,7 @@ export function EventMissions({ eventId }: Props) {
         await setDoc(
           participantRefForPts,
           {
+            authUid,
             name: participantName,
             totalPoints: grandTotal,
             completedCount,
@@ -408,7 +415,7 @@ export function EventMissions({ eventId }: Props) {
         );
 
         await setDoc(
-          doc(db, "users", userId),
+          doc(db, "users", authUid),
           {
             totalPoints: grandTotal,
             updatedAt: serverTimestamp(),
@@ -427,7 +434,8 @@ export function EventMissions({ eventId }: Props) {
     numberValues,
     isReady,
     missions,
-    userId,
+    participantDocId,
+    authUid,
     eventId,
     participantName,
     canUseMissions,
