@@ -2,11 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "../../../lib/firebase";
-import { filterAdminPinInput, isValidFourDigitAdminPin } from "../../../lib/admin-pin";
+import { filterAdminPinInput } from "../../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../../lib/default-admin-pin";
-import { setAdminAccess } from "../../../lib/event-session";
+import { verifyEventAdminPin } from "../../../lib/verify-event-admin-pin";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
 
@@ -53,30 +51,14 @@ export function ParticipantManageClient({ eventId }: Props) {
   };
 
   const submit = async () => {
-    const entered = filterAdminPinInput(digits.join(""));
-    if (!isValidFourDigitAdminPin(entered)) {
-      setError("4桁の数字を入力してください。");
-      return;
-    }
     setBusy(true);
     setError("");
     try {
-      await ensureDefaultAdminPinIfMissing(eventId);
-      const snap = await getDoc(doc(db, "events", eventId));
-      if (!snap.exists()) {
-        setError("イベントが見つかりません。");
+      const result = await verifyEventAdminPin(eventId, digits.join(""));
+      if (!result.ok) {
+        setError(result.message);
         return;
       }
-      const pinStored = String((snap.data() as { adminPin?: unknown }).adminPin ?? "").trim();
-      if (!pinStored) {
-        setError("このイベントには管理PINが設定されていません。");
-        return;
-      }
-      if (entered !== pinStored.trim()) {
-        setError("PINが違います");
-        return;
-      }
-      setAdminAccess(eventId, true);
       router.push(`/admin/${eventId}`);
     } catch (e) {
       console.error(e);

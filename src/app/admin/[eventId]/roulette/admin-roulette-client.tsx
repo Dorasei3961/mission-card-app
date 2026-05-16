@@ -19,8 +19,8 @@ import {
 import { GripVertical, Play } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../../../lib/firebase";
-import { getAdminAccess } from "../../../lib/event-session";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
+import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
   DEFAULT_ROULETTE_SETTINGS,
@@ -64,7 +64,7 @@ function formatHistTime(ts: Timestamp | undefined): string {
 export function AdminRouletteClient({ eventId }: Props) {
   const router = useRouter();
   useRedirectIfEventMissing(eventId);
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const { allowed } = useEventAdminAccess({ eventId });
   const [eventTitle, setEventTitle] = useState("イベント");
   const [settings, setSettings] = useState(() => ({ ...DEFAULT_ROULETTE_SETTINGS }));
   const [settingsDraft, setSettingsDraft] = useState(() => ({ ...DEFAULT_ROULETTE_SETTINGS }));
@@ -82,14 +82,6 @@ export function AdminRouletteClient({ eventId }: Props) {
   const [busy, setBusy] = useState(false);
   const itemsRef = useRef<RouletteItemRow[]>([]);
   itemsRef.current = sortRouletteItemsByOrder(items);
-
-  useEffect(() => {
-    setAllowed(getAdminAccess(eventId));
-  }, [eventId]);
-
-  useEffect(() => {
-    if (allowed === false) router.replace(`/events/${eventId}/manage`);
-  }, [allowed, eventId, router]);
 
   /** 初期シード・機能フラグ・既定ドキュメント */
   useEffect(() => {

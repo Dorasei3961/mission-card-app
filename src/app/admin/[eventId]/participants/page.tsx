@@ -20,6 +20,8 @@ import { auth, db } from "../../../lib/firebase";
 import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../../lib/default-admin-pin";
 import { getAdminAccess, setAdminAccess } from "../../../lib/event-session";
+import { ensureEventAdminSession } from "../../../lib/admin-session-client";
+import { verifyEventAdminPin } from "../../../lib/verify-event-admin-pin";
 
 type Props = { params: Promise<{ eventId: string }> };
 
@@ -178,23 +180,26 @@ export default function AdminParticipantsPage({ params }: Props) {
     };
   }, [eventId, authReady, eventResolved, eventMissing, canManage]);
 
+  useEffect(() => {
+    if (!eventId || !authReady || !pinSession) return;
+    void ensureEventAdminSession(eventId).then((ok) => {
+      if (!ok) {
+        setAdminAccess(eventId, false);
+        setPinSession(false);
+      }
+    });
+  }, [eventId, authReady, pinSession]);
+
   const verifyGatePin = async () => {
-    const entered = filterAdminPinInput(gatePinInput);
-    if (!isValidFourDigitAdminPin(entered)) {
-      setGatePinError("4桁の数字を入力してください。");
-      return;
-    }
     if (!eventId) return;
     setGatePinBusy(true);
     setGatePinError("");
     try {
-      await ensureDefaultAdminPinIfMissing(eventId);
-      const snap = await getDoc(doc(db, "events", eventId));
-      if (!snap.exists()) return setGatePinError("イベントが見つかりません。");
-      const pinStored = String((snap.data() as { adminPin?: unknown }).adminPin ?? "").trim();
-      if (!pinStored) return setGatePinError("このイベントには管理PINが設定されていません。");
-      if (entered !== pinStored.trim()) return setGatePinError("PINが違います");
-      setAdminAccess(eventId, true);
+      const result = await verifyEventAdminPin(eventId, gatePinInput);
+      if (!result.ok) {
+        setGatePinError(result.message);
+        return;
+      }
       setPinSession(true);
       setGatePinInput("");
     } catch (e) {

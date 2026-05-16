@@ -23,14 +23,25 @@ service cloud.firestore {
         && eventDoc(eventId).data.ownerUid == request.auth.uid;
     }
 
-    // NOTE:
-    // - "adminPin を参加者から取得不可" は同一ドキュメント内の field-level 制御ができないため、
-    //   events/{eventId} に adminPin を持たせたままでは実現できません。
-    // - "admin認証済み(localStorage)" を Rules 側で検証することはできません。
-    //   Rules で信頼できるのは request.auth のみです。
-    //
-    // 本ルールは「現機能を壊しにくくしつつ、第三者の改ざんを抑える」ため、
-    // 書き込み権限を owner と本人相当に限定しています。
+    function adminSessionPath(eventId) {
+      return /databases/$(database)/documents/events/$(eventId)/adminSessions/$(request.auth.uid);
+    }
+
+    function isEventAdmin(eventId) {
+      return isSignedIn()
+        && eventExists(eventId)
+        && exists(adminSessionPath(eventId))
+        && get(adminSessionPath(eventId)).data.authUid == request.auth.uid
+        && get(adminSessionPath(eventId)).data.expiresAt > request.time;
+    }
+
+    function canManageEvent(eventId) {
+      return isEventOwner(eventId) || isEventAdmin(eventId);
+    }
+
+    function canManageActiveEvent(eventId) {
+      return canManageEvent(eventId) && isEventActive(eventId);
+    }
 
     match /events/{eventId} {
       // events は公開読み取り
@@ -41,21 +52,25 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.status == "active";
 
-      // イベント本体更新/削除は owner のみ、closed 後は不可
-      allow update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+      // イベント本体: 運営PINセッション or owner
+      allow update: if canManageEvent(eventId);
+      allow delete: if canManageEvent(eventId) && isEventActive(eventId);
+
+      // 運営PIN認証セッション（API の Admin SDK のみ作成。クライアントからの直接書き込み不可）
+      match /adminSessions/{authUid} {
+        allow read: if isSignedIn() && request.auth.uid == authUid;
+        allow create, update: if false;
+        allow delete: if isSignedIn() && request.auth.uid == authUid;
+      }
 
       // 参加者
       match /participants/{participantId} {
         allow read: if true;
 
-        // 新規参加（active のみ）
-        // - owner
-        // - または participantId == auth.uid（旧方式）
-        // - または authUid を明示した本人作成（新方式移行用）
         allow create: if isSignedIn()
           && isEventActive(eventId)
           && (
-            isEventOwner(eventId)
+            canManageEvent(eventId)
             || participantId == request.auth.uid
             || (
               request.resource.data.authUid is string
@@ -63,14 +78,10 @@ service cloud.firestore {
             )
           );
 
-        // 更新（active のみ）
-        // - owner
-        // - 旧方式: doc id が auth.uid の本人
-        // - 移行方式: authUid フィールド一致の本人
         allow update: if isSignedIn()
           && isEventActive(eventId)
           && (
-            isEventOwner(eventId)
+            canManageEvent(eventId)
             || participantId == request.auth.uid
             || (
               request.resource.data.authUid is string
@@ -78,17 +89,13 @@ service cloud.firestore {
             )
           );
 
-        // 削除は owner のみ（active のみ）
-        allow delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow delete: if canManageActiveEvent(eventId);
       }
 
-      // 進捗
       match /missionProgress/{progressId} {
-        // owner は全件閲覧可
-        // 本人は自分の progressId（旧方式 uid）または authUid 一致を閲覧可
         allow read: if isSignedIn()
           && (
-            isEventOwner(eventId)
+            canManageEvent(eventId)
             || progressId == request.auth.uid
             || resource == null
             || (
@@ -101,12 +108,10 @@ service cloud.firestore {
             )
           );
 
-        // 作成/更新は active のみ
-        // owner か本人（旧方式/移行方式）
         allow create, update: if isSignedIn()
           && isEventActive(eventId)
           && (
-            isEventOwner(eventId)
+            canManageEvent(eventId)
             || progressId == request.auth.uid
             || (
               request.resource.data.authUid is string
@@ -114,17 +119,15 @@ service cloud.firestore {
             )
           );
 
-        // 削除は owner のみ（active のみ）
-        allow delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow delete: if canManageActiveEvent(eventId);
       }
 
-      // ログは読み取りのみ（作成は owner または本人、更新/削除不可）
       match /pointLogs/{logId} {
         allow read: if true;
         allow create: if isSignedIn()
           && isEventActive(eventId)
           && (
-            isEventOwner(eventId)
+            canManageEvent(eventId)
             || (
               request.resource.data.uid is string
               && request.resource.data.uid == request.auth.uid
@@ -133,19 +136,16 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      // イベント専用ミッション
       match /missions/{missionId} {
         allow read: if true;
-        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow create, update, delete: if canManageActiveEvent(eventId);
       }
 
-      // クイズ（運営=owner が編集、全員閲覧可）
       match /quizzes/{quizId} {
         allow read: if true;
-        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow create, update, delete: if canManageActiveEvent(eventId);
       }
 
-      // クイズ回答（作成のみ・本人の participantId）
       match /quizAnswers/{answerId} {
         allow read: if true;
         allow create: if isSignedIn()
@@ -156,29 +156,50 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
-      // クイズ進行の拡張（スキップ一覧など events/{eventId}/quiz/main）
       match /quiz/{docId} {
         allow read: if true;
-        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow create, update, delete: if canManageActiveEvent(eventId);
       }
 
-      // ルーレット設定（運営=owner のみ編集、全員閲覧可）
+      match /bingoSettings/{docId} {
+        allow read: if true;
+        allow create, update, delete: if canManageActiveEvent(eventId);
+      }
+
+      match /bingoState/{docId} {
+        allow read: if true;
+        allow create, update: if canManageActiveEvent(eventId)
+          || (isSignedIn() && isEventActive(eventId));
+        allow delete: if canManageActiveEvent(eventId);
+      }
+
+      match /bingoCards/{cardId} {
+        allow read: if true;
+        allow create, update: if isSignedIn() && isEventActive(eventId);
+        allow delete: if canManageActiveEvent(eventId);
+      }
+
+      match /bingoDrawLogs/{logId} {
+        allow read: if true;
+        allow create: if canManageActiveEvent(eventId);
+        allow update, delete: if false;
+      }
+
       match /rouletteSettings/{docId} {
         allow read: if true;
-        allow create, update, delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow create, update, delete: if canManageActiveEvent(eventId);
       }
 
-      // ルーレット状態（参加者も spinning / finished へ更新するためサインイン参加者に許可）
       match /rouletteState/{docId} {
         allow read: if true;
         allow create, update: if isSignedIn() && isEventActive(eventId);
+        allow delete: if canManageActiveEvent(eventId);
       }
 
-      // ルーレット候補（運営が編集。当選除外は active のみ変更）
       match /rouletteItems/{itemId} {
         allow read: if true;
-        allow create, delete: if isEventOwner(eventId) && isEventActive(eventId);
-        allow update: if isEventOwner(eventId) && isEventActive(eventId)
+        allow create, delete: if canManageActiveEvent(eventId);
+        allow update: if canManageActiveEvent(eventId)
           || (
             isSignedIn()
             && isEventActive(eventId)
@@ -188,19 +209,16 @@ service cloud.firestore {
           );
       }
 
-      // ルーレット履歴
       match /rouletteHistory/{historyId} {
         allow read: if true;
         allow create: if isSignedIn() && isEventActive(eventId);
-        allow delete: if isEventOwner(eventId) && isEventActive(eventId);
+        allow delete: if canManageActiveEvent(eventId);
         allow update: if false;
       }
     }
 
-    // users は本人のみ
     match /users/{uid} {
       allow read, write: if isSignedIn() && request.auth.uid == uid;
     }
   }
 }
-

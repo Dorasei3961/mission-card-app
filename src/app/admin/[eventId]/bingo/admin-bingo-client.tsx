@@ -17,8 +17,8 @@ import {
 import { Dices } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "../../../lib/firebase";
-import { getAdminAccess } from "../../../lib/event-session";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
+import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import {
   DEFAULT_BINGO_SETTINGS,
@@ -45,7 +45,7 @@ function pickRandomUndrawn(min: number, max: number, drawnSet: Set<number>): num
 export function AdminBingoClient({ eventId }: Props) {
   const router = useRouter();
   useRedirectIfEventMissing(eventId);
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const { allowed } = useEventAdminAccess({ eventId });
   const [eventTitle, setEventTitle] = useState("イベント");
   const [settings, setSettings] = useState<BingoSettings>(DEFAULT_BINGO_SETTINGS);
   const [state, setState] = useState<BingoState>(DEFAULT_BINGO_STATE);
@@ -53,14 +53,6 @@ export function AdminBingoClient({ eventId }: Props) {
   const [cards, setCards] = useState<BingoCardDoc[]>([]);
   const [participantCount, setParticipantCount] = useState(0);
   const statePathLabel = `events/${eventId}/bingoState/main`;
-
-  useEffect(() => {
-    setAllowed(getAdminAccess(eventId));
-  }, [eventId]);
-
-  useEffect(() => {
-    if (allowed === false) router.replace(`/events/${eventId}/manage`);
-  }, [allowed, eventId, router]);
 
   useEffect(() => {
     const unsubEvent = onSnapshot(doc(db, "events", eventId), (snap) => {

@@ -5,24 +5,16 @@ import { useRouter } from "next/navigation";
 import { ChevronLeft, HelpCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { QuizAdminPanel } from "../../../events/[eventId]/features/quiz-admin-panel";
-import { getAdminAccess } from "../../../lib/event-session";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
+import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 
 type Props = { eventId: string };
 
 export function AdminQuizClient({ eventId }: Props) {
   const router = useRouter();
   useRedirectIfEventMissing(eventId);
-  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const { allowed } = useEventAdminAccess({ eventId });
   const [showGuide, setShowGuide] = useState(false);
-
-  useEffect(() => {
-    setAllowed(getAdminAccess(eventId));
-  }, [eventId]);
-
-  useEffect(() => {
-    if (allowed === false) router.replace(`/events/${eventId}/manage`);
-  }, [allowed, eventId, router]);
 
   if (allowed !== true) {
     return (

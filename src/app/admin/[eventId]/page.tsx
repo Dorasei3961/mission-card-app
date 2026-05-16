@@ -38,6 +38,8 @@ import { isValidFourDigitAdminPin, filterAdminPinInput } from "../../lib/admin-p
 import { ensureDefaultAdminPinIfMissing } from "../../lib/default-admin-pin";
 import { DEFAULT_EVENT_FEATURES, resolveEventFeatures, type EventFeatures } from "../../lib/event-features";
 import { clearEventScopedStorage, getAdminAccess, setAdminAccess } from "../../lib/event-session";
+import { ensureEventAdminSession } from "../../lib/admin-session-client";
+import { verifyEventAdminPin } from "../../lib/verify-event-admin-pin";
 import {
   DEFAULT_MISSIONS_SEED,
   type MissionFields,
@@ -289,6 +291,16 @@ export default function EventAdminPage({ params }: Props) {
   };
 
   useEffect(() => {
+    if (!eventId || !authReady || !pinSession) return;
+    void ensureEventAdminSession(eventId).then((ok) => {
+      if (!ok) {
+        setAdminAccess(eventId, false);
+        setPinSession(false);
+      }
+    });
+  }, [eventId, authReady, pinSession]);
+
+  useEffect(() => {
     if (!eventId || !authReady || !eventResolved || !canManage) return;
     void loadMissions();
     void loadParticipants();
@@ -406,32 +418,15 @@ export default function EventAdminPage({ params }: Props) {
   };
 
   const verifyGatePin = async () => {
-    const entered = filterAdminPinInput(gatePinInput);
-    if (!isValidFourDigitAdminPin(entered)) {
-      setGatePinError("4桁の数字を入力してください。");
-      return;
-    }
     if (!eventId) return;
     setGatePinBusy(true);
     setGatePinError("");
     try {
-      await ensureDefaultAdminPinIfMissing(eventId);
-      const snap = await getDoc(doc(db, "events", eventId));
-      if (!snap.exists()) {
-        clearEventScopedStorage(eventId);
-        router.replace("/");
+      const result = await verifyEventAdminPin(eventId, gatePinInput);
+      if (!result.ok) {
+        setGatePinError(result.message);
         return;
       }
-      const pinStored = String((snap.data() as { adminPin?: unknown }).adminPin ?? "").trim();
-      if (!pinStored) {
-        setGatePinError("このイベントには管理PINが設定されていません。");
-        return;
-      }
-      if (entered !== pinStored.trim()) {
-        setGatePinError("PINが違います");
-        return;
-      }
-      setAdminAccess(eventId, true);
       setPinSession(true);
       setGatePinInput("");
     } catch (e) {

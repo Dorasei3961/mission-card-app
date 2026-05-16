@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { onAuthStateChanged, signInAnonymously } from "firebase/auth";
 import {
   collection,
   deleteDoc,
@@ -14,9 +13,9 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { ChevronLeft } from "lucide-react";
-import { auth, db } from "../../../lib/firebase";
-import { getAdminAccess } from "../../../lib/event-session";
+import { db } from "../../../lib/firebase";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
+import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import {
   DEFAULT_MISSIONS_SEED,
   type MissionFields,
@@ -33,8 +32,7 @@ const showMissionCategoryUi = false;
 export function AdminMissionsClient({ eventId }: Props) {
   const router = useRouter();
   useRedirectIfEventMissing(eventId);
-  const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+  const { allowed, authReady } = useEventAdminAccess({ eventId });
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
 
   const [missions, setMissions] = useState<AdminMission[]>([]);
@@ -51,25 +49,6 @@ export function AdminMissionsClient({ eventId }: Props) {
 
   const canManage = allowed === true;
   const canEdit = canManage && eventStatus === "active";
-
-  useEffect(() => {
-    setAllowed(getAdminAccess(eventId));
-  }, [eventId]);
-
-  useEffect(() => {
-    if (allowed === false) router.replace(`/events/${eventId}/manage`);
-  }, [allowed, eventId, router]);
-
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        await signInAnonymously(auth);
-        return;
-      }
-      setAuthReady(true);
-    });
-    return () => unsub();
-  }, []);
 
   useEffect(() => {
     if (!eventId) return;
