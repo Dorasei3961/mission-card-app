@@ -14,13 +14,33 @@ export function rouletteSegmentDisplayText(
   return `${primary.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
+/** 色リング内側寄りのラベル配置半径（px）— 境界線ではなく扇形の中央付近 */
+export function segmentLabelRadiusPx(outerRadiusPx: number, innerHubRadiusPx: number): number {
+  const usable = Math.max(0, outerRadiusPx - innerHubRadiusPx);
+  return innerHubRadiusPx + usable * 0.58;
+}
+
 /** 扇形の弦長に合わせたラベル最大幅（px） */
-export function segmentTextMaxWidthPx(segmentCount: number): number {
+export function segmentTextMaxWidthPx(segmentCount: number, labelRadiusPx: number): number {
   if (segmentCount <= 0) return 48;
   const segDeg = 360 / segmentCount;
   const halfRad = (segDeg / 2) * (Math.PI / 180);
-  const labelRadius = 100;
-  return Math.max(36, Math.floor(2 * labelRadius * Math.sin(halfRad) * 0.9));
+  return Math.max(32, Math.floor(2 * labelRadiusPx * Math.sin(halfRad) * 0.82));
+}
+
+/** セグメント中心角（deg）。conic-gradient(from -90deg) と同一基準 */
+export function segmentCenterAngleDeg(segmentIndex: number, segmentCount: number): number {
+  if (segmentCount <= 0) return 0;
+  const seg = 360 / segmentCount;
+  return -90 + (segmentIndex + 0.5) * seg;
+}
+
+/** ラベル回転角（半径方向・上下で読みやすく） */
+export function segmentLabelRotationDeg(centerAngleDeg: number): number {
+  let deg = centerAngleDeg;
+  if (deg > 90) deg -= 180;
+  else if (deg < -90) deg += 180;
+  return deg;
 }
 
 /** 当選後の正式表示（例: 2等 Amazonギフト券 1,000円分） */

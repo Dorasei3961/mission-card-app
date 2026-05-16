@@ -4,9 +4,16 @@ import { useMemo } from "react";
 import { ROULETTE_SEGMENT_COLORS } from "../../../lib/roulette-schema";
 import {
   rouletteSegmentDisplayText,
+  segmentCenterAngleDeg,
+  segmentLabelRadiusPx,
+  segmentLabelRotationDeg,
   segmentTextMaxWidthPx,
 } from "../../../lib/roulette-display";
 import type { RouletteItemRow } from "../../../lib/roulette-operations";
+
+const WHEEL_PX = 272;
+const WHEEL_BORDER_PX = 4;
+const HUB_PX = 76;
 
 export function RouletteWheelView({
   activeItems,
@@ -32,7 +39,10 @@ export function RouletteWheelView({
 
   const n = segments.length;
   const seg = n > 0 ? 360 / n : 360;
-  const labelMaxWidth = segmentTextMaxWidthPx(n);
+  const outerRadius = WHEEL_PX / 2 - WHEEL_BORDER_PX;
+  const innerHubRadius = HUB_PX / 2;
+  const labelRadius = segmentLabelRadiusPx(outerRadius, innerHubRadius);
+  const labelMaxWidth = segmentTextMaxWidthPx(n, labelRadius);
   const labelFontSize = n > 8 ? 9 : n > 6 ? 10 : 11;
 
   const gradient = useMemo(() => {
@@ -67,27 +77,28 @@ export function RouletteWheelView({
         }}
       >
         {segments.map((item, i) => {
-          const mid = -90 + (i + 0.5) * seg;
-          const rad = (mid * Math.PI) / 180;
-          const r = 108;
-          const x = Math.cos(rad) * r;
-          const y = Math.sin(rad) * r;
+          const centerDeg = segmentCenterAngleDeg(i, n);
+          const rad = (centerDeg * Math.PI) / 180;
+          const x = Math.cos(rad) * labelRadius;
+          const y = Math.sin(rad) * labelRadius;
+          const textRotate = segmentLabelRotationDeg(centerDeg);
           const displayText = rouletteSegmentDisplayText(item, n);
           const fullTitle = [item.label.trim(), item.name.trim()].filter(Boolean).join(" ");
           return (
             <div
               key={item.id}
-              className="absolute left-1/2 top-1/2 z-[1] flex justify-center"
+              className="absolute left-1/2 top-1/2 z-[1] flex items-center justify-center"
               style={{
-                transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${mid + 90}deg)`,
+                transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${textRotate}deg)`,
               }}
             >
               <span
                 title={fullTitle || displayText}
-                className="block overflow-hidden text-ellipsis whitespace-nowrap text-center font-bold leading-none text-[#111827]"
+                className="line-clamp-2 block overflow-hidden text-center font-bold leading-tight text-[#111827]"
                 style={{
                   maxWidth: labelMaxWidth,
                   fontSize: labelFontSize,
+                  wordBreak: "break-all",
                 }}
               >
                 {displayText}
