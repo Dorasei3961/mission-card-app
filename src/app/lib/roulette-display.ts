@@ -20,12 +20,47 @@ export function segmentLabelRadiusPx(outerRadiusPx: number, innerHubRadiusPx: nu
   return innerHubRadiusPx + usable * 0.5;
 }
 
-/** 扇形の弦長に合わせたラベル最大幅（px）— 境界線から余白を確保 */
+/** 横向きテキストがくさび内に収まる最大幅（px） */
 export function segmentTextMaxWidthPx(segmentCount: number, labelRadiusPx: number): number {
   if (segmentCount <= 0) return 48;
   const segDeg = 360 / segmentCount;
   const halfRad = (segDeg / 2) * (Math.PI / 180);
-  return Math.max(28, Math.floor(2 * labelRadiusPx * Math.sin(halfRad) * 0.7));
+  const byChord = 2 * labelRadiusPx * Math.sin(halfRad) * 0.68;
+  const byTan = 2 * labelRadiusPx * Math.tan(halfRad) * 0.58;
+  return Math.max(24, Math.floor(Math.min(byChord, byTan)));
+}
+
+/** セグメントくさび形 clip-path（はみ出し防止） */
+export function segmentWedgeClipPath(
+  segmentIndex: number,
+  segmentCount: number,
+  wheelRotationDeg: number,
+): string {
+  if (segmentCount <= 0) return "none";
+  const seg = 360 / segmentCount;
+  const mid = segmentCenterAngleDeg(segmentIndex, segmentCount) + wheelRotationDeg;
+  const start = mid - seg / 2;
+  const end = mid + seg / 2;
+  const toPct = (deg: number) => {
+    const rad = (deg * Math.PI) / 180;
+    const x = 50 + 50 * Math.cos(rad);
+    const y = 50 + 50 * Math.sin(rad);
+    return `${x.toFixed(2)}% ${y.toFixed(2)}%`;
+  };
+  return `polygon(50% 50%, ${toPct(start)}, ${toPct(end)})`;
+}
+
+/** テキスト中心基準の left / top（rotate なし） */
+export function segmentLabelCenterStyle(x: number, y: number): {
+  left: string;
+  top: string;
+  transform: string;
+} {
+  return {
+    left: `calc(50% + ${x}px)`,
+    top: `calc(50% + ${y}px)`,
+    transform: "translate(-50%, -50%)",
+  };
 }
 
 /** セグメント数に応じたフォントサイズ（px） */
