@@ -48,18 +48,14 @@ export function missionRequiredCount(mission: MissionFields): number {
   return typeof n === "number" && n > 0 ? Math.floor(n) : 1;
 }
 
-/** チェック型・数量型共通の達成判定 */
+/** 達成判定（チェック型のみ。数量型はカウント記録専用で常に未達成扱い） */
 export function isMissionCompleted(
   mission: MissionFields,
   checkedMissionIds: number[],
-  numberValues: Record<number, number>,
+  _numberValues: Record<number, number>,
 ): boolean {
   if (mission.type === "checkbox") {
     return checkedMissionIds.includes(mission.id);
-  }
-  if (mission.type === "number") {
-    const currentValue = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
-    return currentValue >= missionRequiredCount(mission);
   }
   return false;
 }
