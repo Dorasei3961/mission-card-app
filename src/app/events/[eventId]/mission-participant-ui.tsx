@@ -103,17 +103,15 @@ export function MissionPageHeader({ eventTitle, isClosed }: MissionPageHeaderPro
 }
 
 type MissionSummaryBannerProps = {
-  earnablePoints: number;
+  totalPoints: number;
   completedCount: number;
   totalCount: number;
-  liveTotalPoints: number | null;
 };
 
 export function MissionSummaryBanner({
-  earnablePoints,
+  totalPoints,
   completedCount,
   totalCount,
-  liveTotalPoints,
 }: MissionSummaryBannerProps) {
   return (
     <section
@@ -122,22 +120,16 @@ export function MissionSummaryBanner({
         background: "linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%)",
       }}
     >
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 items-end gap-4">
         <div>
-          <p className="text-xs opacity-80">獲得可能ポイント</p>
+          <p className="text-xs opacity-80">現在の合計</p>
           <p className="mt-1 text-5xl font-black tabular-nums leading-none">
-            {earnablePoints.toLocaleString("ja-JP")}
+            {totalPoints.toLocaleString("ja-JP")}
             <span className="ml-1 text-2xl font-black">pt</span>
           </p>
-          {liveTotalPoints != null ? (
-            <p className="mt-2 text-[11px] font-semibold opacity-90">
-              現在の合計 {liveTotalPoints.toLocaleString("ja-JP")} pt
-            </p>
-          ) : null}
         </div>
         <div className="text-right">
-          <p className="text-xs opacity-80">達成状況</p>
-          <p className="mt-1 text-5xl font-black tabular-nums leading-none">
+          <p className="text-5xl font-black tabular-nums leading-none">
             {completedCount}
             <span className="text-3xl font-black opacity-90">/{totalCount}</span>
           </p>

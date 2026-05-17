@@ -26,7 +26,6 @@ import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../lib/participant-last-page";
 import {
   isMissionCompleted,
-  maxEarnablePoints,
   MISSION_PAGE_BG,
   MissionCard,
   MissionFilterTabs,
@@ -158,7 +157,6 @@ export function EventMissions({ eventId }: Props) {
   }, [visibleMissions, missionCompletionById]);
 
   const completedMissionCount = missionFilterCounts.complete;
-  const earnablePoints = useMemo(() => maxEarnablePoints(visibleMissions), [visibleMissions]);
 
   const decrementMissionCount = useCallback((missionId: number) => {
     setNumberValues((prev) => {
@@ -577,10 +575,9 @@ export function EventMissions({ eventId }: Props) {
         {canUseMissions && featureMissionEnabled ? (
           <>
             <MissionSummaryBanner
-              earnablePoints={earnablePoints}
+              totalPoints={liveParticipantTotalPts ?? totalPoints}
               completedCount={completedMissionCount}
               totalCount={visibleMissions.length}
-              liveTotalPoints={liveParticipantTotalPts ?? totalPoints}
             />
             <MissionFilterTabs
               active={missionFilter}
