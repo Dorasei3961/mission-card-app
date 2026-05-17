@@ -1,16 +1,52 @@
-/** ヒーロー用のモックUIカード（装飾のみ） */
+/** ヒーロー用スマホモック＋浮遊カード（装飾のみ） */
 
 export function TopMockCards() {
   return (
-    <div className="relative mx-auto mt-10 h-[220px] w-full max-w-[300px]" aria-hidden>
-      <div className="top-float-delay-2 absolute left-0 top-8 z-[1] w-[148px] -rotate-6 rounded-[24px] border border-gray-100 bg-white p-3 shadow-md">
-        <p className="text-[10px] font-bold text-[#7C3AED]">ビンゴ</p>
-        <div className="mt-2 grid grid-cols-3 gap-1">
-          {["B", "I", "N", "G", "O", "★"].map((c, i) => (
+    <div className="relative mx-auto mt-8 w-full max-w-[320px]" aria-hidden>
+      {/* スマホフレーム */}
+      <div className="top-fade-up-d2 relative z-[5] mx-auto w-[200px] rounded-[28px] border-[6px] border-[#111827] bg-white p-2 shadow-2xl shadow-violet-200/50">
+        <div className="mx-auto mb-2 h-4 w-16 rounded-full bg-gray-900" />
+        <div className="overflow-hidden rounded-[20px] bg-[#FAF7FF] p-2">
+          <p className="text-center text-[9px] font-bold text-[#7C3AED]">🎉 イベント開催中</p>
+          <div className="top-float mt-2 rounded-2xl border border-violet-100 bg-white p-2 shadow-sm">
+            <div className="flex items-center gap-1.5">
+              <span className="text-base">🎯</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[9px] font-bold text-gray-800">交流チャレンジ</p>
+                <p className="text-[8px] text-gray-400">達成で +20pt</p>
+              </div>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#7C3AED] text-[8px] text-white">
+                ✓
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-1">
+            <div className="rounded-xl bg-sky-100/80 p-1.5 text-center">
+              <p className="text-[8px] font-bold text-sky-700">クイズ</p>
+              <p className="text-lg">❓</p>
+            </div>
+            <div className="rounded-xl bg-amber-100/80 p-1.5 text-center">
+              <p className="text-[8px] font-bold text-amber-700">ビンゴ</p>
+              <p className="text-lg">🎱</p>
+            </div>
+          </div>
+          <div className="top-spin-slow mx-auto mt-2 h-12 w-12 rounded-full border-2 border-white shadow"
+            style={{
+              background: `conic-gradient(from -90deg, #FDE68A, #A78BFA, #7C3AED, #EDE9FE, #FBCFE8, #FDE68A)`,
+            }}
+          />
+        </div>
+      </div>
+
+      {/* 浮遊カード */}
+      <div className="top-float-rotate top-float-delay-2 absolute -left-1 top-16 z-[6] w-[118px] -rotate-12 rounded-2xl border border-amber-200 bg-white/95 p-2 shadow-lg backdrop-blur-sm">
+        <p className="text-[9px] font-bold text-amber-600">ビンゴ</p>
+        <div className="mt-1 grid grid-cols-3 gap-0.5">
+          {["B", "I", "★", "G", "O", "7"].map((c, i) => (
             <span
               key={i}
-              className={`flex aspect-square items-center justify-center rounded-md text-[9px] font-black ${
-                c === "★" ? "bg-[#7C3AED] text-white" : "bg-[#EDE9FE] text-[#7C3AED]"
+              className={`flex aspect-square items-center justify-center rounded text-[7px] font-black ${
+                c === "★" ? "bg-[#7C3AED] text-white" : "bg-amber-50 text-amber-800"
               }`}
             >
               {c}
@@ -19,39 +55,20 @@ export function TopMockCards() {
         </div>
       </div>
 
-      <div className="top-float-delay-3 absolute right-0 top-2 z-[2] w-[132px] rotate-6 rounded-[24px] border border-gray-100 bg-white p-3 shadow-md">
-        <p className="text-[10px] font-bold text-[#7C3AED]">クイズ</p>
-        <p className="mt-2 text-xs font-bold text-gray-900">正解は？</p>
-        <div className="mt-2 space-y-1">
-          <div className="rounded-lg bg-[#EDE9FE] px-2 py-1 text-[9px] font-semibold text-[#7C3AED]">A</div>
-          <div className="rounded-lg bg-gray-50 px-2 py-1 text-[9px] text-gray-400">B</div>
+      <div className="top-float-rotate top-float-delay-3 absolute -right-1 top-10 z-[6] w-[110px] rotate-12 rounded-2xl border border-sky-200 bg-white/95 p-2 shadow-lg backdrop-blur-sm">
+        <p className="text-[9px] font-bold text-sky-600">クイズ</p>
+        <p className="mt-1 text-[8px] font-bold text-gray-800">正解は…？</p>
+        <div className="top-pulse-soft mt-1 rounded-md bg-sky-500 py-0.5 text-center text-[7px] font-bold text-white">
+          みんなで拍手！
         </div>
       </div>
 
-      <div className="top-float absolute left-1/2 top-0 z-[3] w-[168px] -translate-x-1/2 rounded-[28px] border border-gray-100 bg-white p-3.5 shadow-lg">
-        <div className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-100 text-lg">
-            🎯
-          </span>
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold text-[#7C3AED]">ミッション</p>
-            <p className="truncate text-xs font-bold text-gray-900">交流チャレンジ</p>
-          </div>
-        </div>
-        <p className="mt-2 text-lg font-black text-[#F59E0B]">+20 pt</p>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100">
-          <div className="h-full w-2/3 rounded-full bg-[#7C3AED]" />
-        </div>
+      <div className="top-wiggle top-float-delay-1 absolute bottom-2 right-4 z-[7] rounded-full border-2 border-pink-200 bg-white px-2 py-1 text-[10px] font-bold text-pink-500 shadow-md">
+        🎁 当たり！
       </div>
 
-      <div className="top-float-delay-1 absolute bottom-0 left-1/2 z-[4] w-[120px] -translate-x-1/2 rounded-full border-4 border-[#7C3AED] bg-white p-2 shadow-md">
-        <p className="text-center text-[9px] font-bold text-[#7C3AED]">ルーレット</p>
-        <div
-          className="mx-auto mt-1 h-14 w-14 rounded-full"
-          style={{
-            background: `conic-gradient(from -90deg, #FDE68A 0deg 90deg, #A78BFA 90deg 180deg, #7C3AED 180deg 270deg, #EDE9FE 270deg 360deg)`,
-          }}
-        />
+      <div className="top-float top-float-delay-4 absolute bottom-6 left-2 z-[6] rounded-full bg-[#7C3AED] px-2.5 py-1 text-[10px] font-bold text-white shadow-md">
+        +50 pt 🎉
       </div>
     </div>
   );

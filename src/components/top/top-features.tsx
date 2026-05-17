@@ -1,51 +1,80 @@
-const FEATURES = [
+import { TopFeaturePreview, type FeaturePreviewKind } from "./top-feature-previews";
+import { TopSectionHeading } from "./top-section-heading";
+
+const FEATURES: {
+  kind: FeaturePreviewKind;
+  emoji: string;
+  title: string;
+  description: string;
+  tintBg: string;
+  tintBorder: string;
+  delayClass: string;
+}[] = [
   {
+    kind: "mission",
     emoji: "🎯",
     title: "ミッション",
-    description: "交流・参加・チャレンジをポイント化",
-    tint: "rgba(124, 58, 237, 0.12)",
+    description: "交流・参加・チャレンジをポイント化。達成のたびにワクワク！",
+    tintBg: "linear-gradient(145deg, rgba(124,58,237,0.14) 0%, rgba(255,255,255,0.95) 55%)",
+    tintBorder: "rgba(124, 58, 237, 0.22)",
+    delayClass: "top-fade-up-d1",
   },
   {
+    kind: "quiz",
     emoji: "❓",
     title: "クイズ",
-    description: "リアルタイムで盛り上がる",
-    tint: "rgba(14, 165, 233, 0.12)",
+    description: "リアルタイム回答で会場がひとつに。盛り上がり必至！",
+    tintBg: "linear-gradient(145deg, rgba(14,165,233,0.14) 0%, rgba(255,255,255,0.95) 55%)",
+    tintBorder: "rgba(14, 165, 233, 0.22)",
+    delayClass: "top-fade-up-d2",
   },
   {
+    kind: "bingo",
     emoji: "🎱",
     title: "ビンゴ",
-    description: "イベント定番機能をスマホ化",
-    tint: "rgba(245, 158, 11, 0.14)",
+    description: "イベント定番をスマホで。ビンゴの歓声、そのまま再現。",
+    tintBg: "linear-gradient(145deg, rgba(245,158,11,0.16) 0%, rgba(255,255,255,0.95) 55%)",
+    tintBorder: "rgba(245, 158, 11, 0.28)",
+    delayClass: "top-fade-up-d2",
   },
   {
+    kind: "roulette",
     emoji: "🎡",
     title: "ルーレット",
-    description: "抽選・景品演出を簡単に",
-    tint: "rgba(167, 139, 250, 0.2)",
+    description: "抽選・景品演出をかんたんに。パーティの目玉にも。",
+    tintBg: "linear-gradient(145deg, rgba(244,114,182,0.14) 0%, rgba(255,255,255,0.95) 55%)",
+    tintBorder: "rgba(244, 114, 182, 0.25)",
+    delayClass: "top-fade-up-d3",
   },
-] as const;
+];
 
 export function TopFeatures() {
   return (
     <section className="mt-16">
-      <h2 className="text-center text-2xl font-black text-[#111827]">できること</h2>
-      <p className="mt-2 text-center text-sm text-gray-500">イベントを盛り上げる4つの機能</p>
+      <TopSectionHeading
+        title="できること"
+        subtitle="イベントを盛り上げる4つの遊び"
+      />
 
-      <ul className="mt-8 flex flex-col gap-4">
+      <ul className="mt-8 flex flex-col gap-5">
         {FEATURES.map((f) => (
           <li
             key={f.title}
-            className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm"
+            className={`${f.delayClass} rounded-3xl border p-5 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:shadow-md`}
+            style={{
+              background: f.tintBg,
+              borderColor: f.tintBorder,
+            }}
           >
             <span
-              className="flex h-14 w-14 items-center justify-center rounded-2xl text-3xl"
-              style={{ backgroundColor: f.tint }}
+              className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-3xl shadow-sm"
               aria-hidden
             >
               {f.emoji}
             </span>
-            <h3 className="mt-4 text-xl font-bold text-gray-900">{f.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-gray-500">{f.description}</p>
+            <h3 className="mt-3 text-xl font-bold text-gray-900">{f.title}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{f.description}</p>
+            <TopFeaturePreview kind={f.kind} />
           </li>
         ))}
       </ul>

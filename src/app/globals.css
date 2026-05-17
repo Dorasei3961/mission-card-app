@@ -25,13 +25,77 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* ── LP /about 用アニメーション ── */
+
 @keyframes top-float {
   0%,
   100% {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-10px);
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes top-float-rotate {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(2deg);
+  }
+}
+
+@keyframes top-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes top-wiggle {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes top-spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes top-pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes top-shimmer {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
   }
 }
 
@@ -39,14 +103,69 @@ body {
   animation: top-float 4s ease-in-out infinite;
 }
 
+.top-float-rotate {
+  animation: top-float-rotate 5s ease-in-out infinite;
+}
+
 .top-float-delay-1 {
-  animation-delay: 0.6s;
+  animation-delay: 0.5s;
 }
 
 .top-float-delay-2 {
-  animation-delay: 1.2s;
+  animation-delay: 1s;
 }
 
 .top-float-delay-3 {
-  animation-delay: 1.8s;
+  animation-delay: 1.5s;
+}
+
+.top-float-delay-4 {
+  animation-delay: 2s;
+}
+
+.top-fade-up {
+  animation: top-fade-up 0.7s ease-out both;
+}
+
+.top-fade-up-d1 {
+  animation: top-fade-up 0.7s ease-out 0.1s both;
+}
+
+.top-fade-up-d2 {
+  animation: top-fade-up 0.7s ease-out 0.2s both;
+}
+
+.top-fade-up-d3 {
+  animation: top-fade-up 0.7s ease-out 0.3s both;
+}
+
+.top-wiggle {
+  animation: top-wiggle 3s ease-in-out infinite;
+}
+
+.top-spin-slow {
+  animation: top-spin-slow 14s linear infinite;
+}
+
+.top-pulse-soft {
+  animation: top-pulse-soft 2.5s ease-in-out infinite;
+}
+
+.top-shimmer {
+  animation: top-shimmer 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .top-float,
+  .top-float-rotate,
+  .top-wiggle,
+  .top-spin-slow,
+  .top-pulse-soft,
+  .top-shimmer,
+  .top-fade-up,
+  .top-fade-up-d1,
+  .top-fade-up-d2,
+  .top-fade-up-d3 {
+    animation: none !important;
+  }
 }
