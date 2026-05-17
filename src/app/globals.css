@@ -169,3 +169,152 @@ body {
     animation: none !important;
   }
 }
+
+/* ── /about LP（パーティ・ネオブルータル） ── */
+
+.about-lp {
+  --about-text: #1f1035;
+  --about-bg: #fffbf0;
+  --about-purple: #7c3aed;
+  --about-yellow: #fcd34d;
+  --about-muted: #6b7280;
+  color: var(--about-text);
+  background: var(--about-bg);
+}
+
+.about-display {
+  font-family: var(--font-about-display), "Noto Sans JP", sans-serif;
+}
+
+@keyframes about-confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(110vh) rotate(720deg);
+  }
+}
+
+@keyframes about-blob-float {
+  0%,
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
+  50% {
+    transform: scale(1.1) translate(20px, -20px);
+  }
+}
+
+@keyframes about-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes about-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes about-wiggle {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+.about-confetti-piece {
+  animation: about-confetti-fall linear infinite;
+}
+
+.about-blob {
+  animation: about-blob-float ease-in-out infinite;
+}
+
+.about-pop-in {
+  animation: about-pop-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.about-fade-up {
+  animation: about-fade-up 0.6s ease both;
+}
+
+.about-fade-up-d1 {
+  animation: about-fade-up 0.6s 0.15s ease both;
+}
+
+.about-fade-up-d2 {
+  animation: about-fade-up 0.6s 0.25s ease both;
+}
+
+.about-fade-up-d3 {
+  animation: about-fade-up 0.6s 0.35s ease both;
+}
+
+.about-fade-up-d4 {
+  animation: about-fade-up 0.5s 0.5s ease both;
+}
+
+.about-fade-up-d5 {
+  animation: about-fade-up 0.5s 0.6s ease both;
+}
+
+.about-fade-up-d6 {
+  animation: about-fade-up 0.5s 0.7s ease both;
+}
+
+.about-fade-up-d7 {
+  animation: about-fade-up 0.5s 0.8s ease both;
+}
+
+.about-wiggle {
+  animation: about-wiggle 2s ease-in-out infinite;
+}
+
+.about-brutal {
+  border: 2.5px solid var(--about-text);
+  box-shadow: 4px 4px 0 var(--about-text);
+}
+
+.about-brutal-sm {
+  border: 2.5px solid var(--about-text);
+  box-shadow: 3px 3px 0 var(--about-text);
+}
+
+.about-brutal-lg {
+  border: 3px solid var(--about-text);
+  box-shadow: 6px 6px 0 var(--about-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-confetti-piece,
+  .about-blob,
+  .about-pop-in,
+  .about-fade-up,
+  .about-fade-up-d1,
+  .about-fade-up-d2,
+  .about-fade-up-d3,
+  .about-fade-up-d4,
+  .about-fade-up-d5,
+  .about-fade-up-d6,
+  .about-fade-up-d7,
+  .about-wiggle {
+    animation: none !important;
+  }
+}

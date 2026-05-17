@@ -1,5 +1,5 @@
-import { TopAboutPage } from "@/components/top/top-about-page";
+import { AboutPage } from "@/components/about/about-page";
 
-export default function AboutPage() {
-  return <TopAboutPage />;
+export default function AboutRoutePage() {
+  return <AboutPage />;
 }
