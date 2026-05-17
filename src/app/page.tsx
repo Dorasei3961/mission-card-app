@@ -102,6 +102,12 @@ export default function HomePage() {
           >
             開催中のイベントを見る
           </Link>
+          <Link
+            href="/about"
+            className="rounded-2xl border-2 border-[#7C3AED] bg-white px-6 py-4 text-center text-base font-bold text-[#7C3AED] shadow-sm active:bg-violet-50 touch-manipulation"
+          >
+            サービス紹介を見る
+          </Link>
         </div>
 
         <section className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">

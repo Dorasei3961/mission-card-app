@@ -24,3 +24,29 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+@keyframes top-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.top-float {
+  animation: top-float 4s ease-in-out infinite;
+}
+
+.top-float-delay-1 {
+  animation-delay: 0.6s;
+}
+
+.top-float-delay-2 {
+  animation-delay: 1.2s;
+}
+
+.top-float-delay-3 {
+  animation-delay: 1.8s;
+}
