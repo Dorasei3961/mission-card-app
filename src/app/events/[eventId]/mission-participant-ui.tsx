@@ -48,7 +48,7 @@ export function missionRequiredCount(mission: MissionFields): number {
   return typeof n === "number" && n > 0 ? Math.floor(n) : 1;
 }
 
-/** 達成判定（チェック型のみ。数量型はカウント記録専用で常に未達成扱い） */
+/** 達成判定（チェック型のみ：フィルター・並び替え・カードUI用） */
 export function isMissionCompleted(
   mission: MissionFields,
   checkedMissionIds: number[],
@@ -56,6 +56,22 @@ export function isMissionCompleted(
 ): boolean {
   if (mission.type === "checkbox") {
     return checkedMissionIds.includes(mission.id);
+  }
+  return false;
+}
+
+/** サマリー右上の達成状況カウント用（チェックON または 数量型が上限達成） */
+export function isMissionAchievedForSummary(
+  mission: MissionFields,
+  checkedMissionIds: number[],
+  numberValues: Record<number, number>,
+): boolean {
+  if (mission.type === "checkbox") {
+    return checkedMissionIds.includes(mission.id);
+  }
+  if (mission.type === "number") {
+    const currentValue = Math.max(0, Math.floor(numberValues[mission.id] ?? 0));
+    return currentValue >= missionRequiredCount(mission);
   }
   return false;
 }
@@ -154,7 +170,7 @@ export function MissionFilterTabs({ active, counts, onChange }: MissionFilterTab
   ];
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-nowrap gap-1.5">
       {tabs.map((tab) => {
         const isActive = active === tab.id;
         const count = counts[tab.id];
@@ -163,15 +179,15 @@ export function MissionFilterTabs({ active, counts, onChange }: MissionFilterTab
             key={tab.id}
             type="button"
             onClick={() => onChange(tab.id)}
-            className={`inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-bold transition-all touch-manipulation ${
+            className={`flex min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-2 py-2.5 text-xs font-bold transition-all touch-manipulation sm:gap-1.5 sm:px-3 sm:py-3 sm:text-sm ${
               isActive
                 ? "bg-[#7C3AED] text-white shadow-md"
                 : "bg-[#EDE9FE] text-[#7C3AED]"
             }`}
           >
-            {tab.label}
+            <span className="truncate">{tab.label}</span>
             <span
-              className={`flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-1.5 text-xs font-bold ${
+              className={`flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-bold sm:h-6 sm:min-w-[1.5rem] sm:px-1.5 sm:text-xs ${
                 isActive ? "bg-white/25 text-white" : "bg-[#7C3AED]/10 text-[#7C3AED]"
               }`}
             >

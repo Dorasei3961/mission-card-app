@@ -25,6 +25,7 @@ import { resolveEventFeatures } from "../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../lib/participant-last-page";
 import {
+  isMissionAchievedForSummary,
   isMissionCompleted,
   MISSION_PAGE_BG,
   MissionCard,
@@ -156,7 +157,13 @@ export function EventMissions({ eventId }: Props) {
     return { all, complete, incomplete: all - complete };
   }, [visibleMissions, missionCompletionById]);
 
-  const completedMissionCount = missionFilterCounts.complete;
+  const completedMissionCount = useMemo(() => {
+    let n = 0;
+    for (const m of visibleMissions) {
+      if (isMissionAchievedForSummary(m, checkedMissionIds, numberValues)) n += 1;
+    }
+    return n;
+  }, [visibleMissions, checkedMissionIds, numberValues]);
 
   const decrementMissionCount = useCallback((missionId: number) => {
     setNumberValues((prev) => {
