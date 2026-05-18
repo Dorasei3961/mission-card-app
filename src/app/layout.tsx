@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "mission-card | イベントをもっと楽しく",
-  description: "ミッション・クイズ・ビンゴ・ルーレットで参加型イベントを簡単に。",
+  title: "mission-card | イベントをもっと楽しくする参加型Webアプリ",
+  description:
+    "ミッション・クイズ・ビンゴ・ルーレットをスマホで簡単開催。交流会・オフ会・文化祭などを盛り上げる参加型Webアプリ。",
 };
 
 export default function RootLayout({
