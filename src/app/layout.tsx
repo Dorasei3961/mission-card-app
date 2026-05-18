@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { siteMetadata } from "@/lib/site-metadata";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -12,11 +12,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "mission-card | イベントをもっと楽しくする参加型Webアプリ",
-  description:
-    "ミッション・クイズ・ビンゴ・ルーレットをスマホで簡単開催。交流会・オフ会・文化祭などを盛り上げる参加型Webアプリ。",
-};
+export const metadata = siteMetadata;
 
 export default function RootLayout({
   children,
