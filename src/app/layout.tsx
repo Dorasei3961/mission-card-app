@@ -1,6 +1,11 @@
+import type { Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { siteMetadata } from "@/lib/site-metadata";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  themeColor: "#7C3AED",
+};
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
