@@ -7,7 +7,7 @@ import { db } from "./firebase";
 import { resolveEventFeatures } from "./event-features";
 
 /** ルーレット画面の開発停止フラグ（再開時は false に） */
-const ROULETTE_UNDER_DEVELOPMENT = true;
+const ROULETTE_UNDER_DEVELOPMENT = false;
 
 type Props = {
   eventId: string;
