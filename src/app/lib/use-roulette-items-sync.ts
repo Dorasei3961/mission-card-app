@@ -15,7 +15,7 @@ import { db } from "./firebase";
 import { rouletteSegmentDisplayText } from "./roulette-display";
 import { sortRouletteItemsByOrder, type RouletteItemRow } from "./roulette-operations";
 
-const MAX_ITEMS = 12;
+const MAX_ITEMS = 16;
 
 /** 第1段階の初期シード（Firestoreが空のとき） */
 const DEFAULT_SEED_NAMES = ["景品A", "景品B", "景品C", "景品D", "景品E", "景品F"];

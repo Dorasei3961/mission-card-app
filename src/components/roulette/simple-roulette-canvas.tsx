@@ -6,7 +6,7 @@ import { ROULETTE_SEGMENT_COLORS } from "@/app/lib/roulette-schema";
 const DEFAULT_ITEMS = ["景品A", "景品B", "景品C", "景品D", "景品E", "景品F"];
 const SPIN_DURATION_MS = 4000;
 const MIN_FULL_SPINS = 5;
-const MAX_ITEMS = 12;
+const MAX_ITEMS = 16;
 const MIN_CANVAS = 220;
 const MAX_CANVAS = 320;
 
@@ -99,8 +99,8 @@ function drawWheel(
       ctx.rotate(mid + Math.PI / 2);
       ctx.fillStyle = "#1F2937";
       const fontSize =
-        n <= 6 ? 13 : n <= 8 ? 11 : n <= 10 ? 10 : n <= 12 ? 9 : 8;
-      const maxChars = n <= 6 ? 8 : n <= 8 ? 6 : n <= 10 ? 5 : 4;
+        n <= 6 ? 13 : n <= 8 ? 11 : n <= 10 ? 10 : n <= 12 ? 9 : n <= 16 ? 8 : 7;
+      const maxChars = n <= 6 ? 8 : n <= 8 ? 6 : n <= 10 ? 5 : n <= 12 ? 4 : 3;
       ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
@@ -295,7 +295,7 @@ export function SimpleRouletteCanvas({
     <div className={className}>
       {showItemEditor ? (
         <section className="rounded-2xl border border-[#E9D5FF] bg-violet-50/50 p-3">
-          <p className="text-xs font-bold text-[#6D28D9]">項目管理（最大12件）</p>
+          <p className="text-xs font-bold text-[#6D28D9]">項目管理（最大16件）</p>
           <div className="mt-2 flex gap-2">
             <input
               value={newItem}
