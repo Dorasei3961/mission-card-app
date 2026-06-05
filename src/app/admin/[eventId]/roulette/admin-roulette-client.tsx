@@ -7,6 +7,7 @@ import { SimpleRouletteCanvas } from "@/components/roulette/simple-roulette-canv
 import { db } from "../../../lib/firebase";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
 import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
+import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
 
 type Props = { eventId: string };
 
@@ -16,6 +17,15 @@ export function AdminRouletteClient({ eventId }: Props) {
   useRedirectIfEventMissing(eventId);
   const { allowed } = useEventAdminAccess({ eventId });
   const [eventTitle, setEventTitle] = useState("イベント");
+  const {
+    displayLabels,
+    editorItems,
+    loading: itemsLoading,
+    busy: itemsBusy,
+    addItem,
+    removeItem,
+    maxItems,
+  } = useRouletteItemsSync(eventId, { seedIfEmpty: true });
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -46,7 +56,20 @@ export function AdminRouletteClient({ eventId }: Props) {
         </header>
 
         <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
-          <SimpleRouletteCanvas canSpin showItemEditor />
+          {itemsLoading ? (
+            <p className="text-center text-sm text-[#6B7280]">項目を読み込み中…</p>
+          ) : (
+            <SimpleRouletteCanvas
+              canSpin
+              showItemEditor
+              items={displayLabels}
+              editorItems={editorItems}
+              onAddItem={addItem}
+              onRemoveItem={removeItem}
+              maxItems={maxItems}
+              itemsBusy={itemsBusy}
+            />
+          )}
         </section>
 
         <Link

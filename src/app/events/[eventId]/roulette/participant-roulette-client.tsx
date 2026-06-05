@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SimpleRouletteCanvas } from "@/components/roulette/simple-roulette-canvas";
 import { db } from "../../../lib/firebase";
+import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
 import { clearEventScopedStorage } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../../lib/participant-ui";
@@ -22,6 +23,7 @@ export function ParticipantRouletteClient({ eventId }: Props) {
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
   const [featureOn, setFeatureOn] = useState(false);
+  const { displayLabels, loading: itemsLoading } = useRouletteItemsSync(eventId);
 
   useEffect(() => {
     recordParticipantMainPage(eventId, `/events/${eventId}/roulette`);
@@ -79,7 +81,11 @@ export function ParticipantRouletteClient({ eventId }: Props) {
           <p className="mt-2 text-sm font-medium text-[#6B7280]">
             運営が抽選を開始すると結果が表示されます
           </p>
-          <SimpleRouletteCanvas className="mt-4" canSpin={false} />
+          {itemsLoading ? (
+            <p className="mt-4 text-center text-sm text-[#6B7280]">項目を読み込み中…</p>
+          ) : (
+            <SimpleRouletteCanvas className="mt-4" canSpin={false} items={displayLabels} />
+          )}
         </section>
       </main>
 

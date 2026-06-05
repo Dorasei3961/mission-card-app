@@ -10,10 +10,19 @@ const MAX_ITEMS = 12;
 const MIN_CANVAS = 220;
 const MAX_CANVAS = 320;
 
+type EditorItem = { id: string; label: string };
+
 type Props = {
   canSpin: boolean;
   className?: string;
   showItemEditor?: boolean;
+  /** Firestore同期済みの表示ラベル（未指定時はローカル初期値） */
+  items?: string[];
+  editorItems?: EditorItem[];
+  onAddItem?: (name: string) => void | Promise<void>;
+  onRemoveItem?: (id: string) => void | Promise<void>;
+  maxItems?: number;
+  itemsBusy?: boolean;
 };
 
 function normalizeDeg(deg: number): number {
@@ -125,6 +134,12 @@ export function SimpleRouletteCanvas({
   canSpin,
   className,
   showItemEditor = false,
+  items: externalItems,
+  editorItems,
+  onAddItem,
+  onRemoveItem,
+  maxItems = MAX_ITEMS,
+  itemsBusy = false,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -141,9 +156,11 @@ export function SimpleRouletteCanvas({
   const [showConfetti, setShowConfetti] = useState(false);
   const [resultVisible, setResultVisible] = useState(false);
 
+  const sourceItems = externalItems ?? items;
+
   const cleanItems = useMemo(
-    () => items.map((x) => x.trim()).filter((x) => x.length > 0),
-    [items],
+    () => sourceItems.map((x) => x.trim()).filter((x) => x.length > 0),
+    [sourceItems],
   );
 
   const measure = useCallback(() => {
@@ -213,13 +230,22 @@ export function SimpleRouletteCanvas({
   const addItem = () => {
     const trimmed = newItem.trim();
     if (!trimmed) return;
-    if (items.length >= MAX_ITEMS) return;
+    if (cleanItems.length >= maxItems) return;
+    if (onAddItem) {
+      void onAddItem(trimmed);
+      setNewItem("");
+      return;
+    }
     setItems((prev) => [...prev, trimmed]);
     setNewItem("");
   };
 
-  const removeItem = (index: number) => {
+  const removeItem = (index: number, id?: string) => {
     if (isSpinning) return;
+    if (onRemoveItem && id) {
+      void onRemoveItem(id);
+      return;
+    }
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -273,23 +299,26 @@ export function SimpleRouletteCanvas({
             <button
               type="button"
               onClick={addItem}
-              disabled={items.length >= MAX_ITEMS}
+              disabled={cleanItems.length >= maxItems || itemsBusy}
               className="rounded-xl bg-[#7C3AED] px-4 text-sm font-bold text-white disabled:opacity-45"
             >
               追加
             </button>
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {items.map((item, idx) => (
+            {(editorItems ?? cleanItems.map((label, idx) => ({ id: String(idx), label }))).map(
+              (item, idx) => (
               <button
-                key={`${item}-${idx}`}
+                key={item.id}
                 type="button"
-                onClick={() => removeItem(idx)}
-                className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-[#6D28D9]"
+                onClick={() => removeItem(idx, item.id)}
+                disabled={itemsBusy || isSpinning}
+                className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-[#6D28D9] disabled:opacity-45"
               >
-                {item} ×
+                {item.label} ×
               </button>
-            ))}
+            ),
+            )}
           </div>
         </section>
       ) : null}
