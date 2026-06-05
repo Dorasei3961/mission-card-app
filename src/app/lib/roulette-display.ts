@@ -1,11 +1,24 @@
+type RouletteDisplayOptions = {
+  showGradeLabels?: boolean;
+};
+
 /** ルーレット扇形内の省略表示（1セグメント1行） */
 export function rouletteSegmentDisplayText(
   item: { label: string; name: string },
   segmentCount: number,
+  options?: RouletteDisplayOptions,
 ): string {
+  const showGradeLabels = options?.showGradeLabels === true;
   const name = item.name.trim();
   const label = item.label.trim();
-  const primary = name || label;
+  let primary: string;
+  if (showGradeLabels && label && name) {
+    primary = `${label} ${name}`;
+  } else if (showGradeLabels && label) {
+    primary = label;
+  } else {
+    primary = name || label;
+  }
   if (!primary) return "—";
 
   const maxChars =
@@ -107,9 +120,12 @@ export function segmentLabelFontSizePx(segmentCount: number): number {
 export function rouletteWinnerDisplayText(
   label: string | null | undefined,
   name: string | null | undefined,
+  options?: RouletteDisplayOptions,
 ): string {
+  const showGradeLabels = options?.showGradeLabels === true;
   const l = (label ?? "").trim();
   const n = (name ?? "").trim();
+  if (!showGradeLabels) return n || l || "—";
   if (l && n) return `${l} ${n}`;
   return n || l || "—";
 }

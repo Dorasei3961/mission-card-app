@@ -8,6 +8,7 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  updateDoc,
   writeBatch,
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -23,6 +24,8 @@ const DEFAULT_SEED_NAMES = ["景品A", "景品B", "景品C", "景品D", "景品E
 type Options = {
   /** 運営画面のみ true。空コレクション時に初期項目を作成 */
   seedIfEmpty?: boolean;
+  /** 等級ラベルを表示テキストに含める */
+  showGradeLabels?: boolean;
 };
 
 function mapDocToRow(id: string, raw: Record<string, unknown>): RouletteItemRow {
@@ -42,7 +45,7 @@ function hasDisplayText(item: RouletteItemRow): boolean {
 }
 
 export function useRouletteItemsSync(eventId: string, options: Options = {}) {
-  const { seedIfEmpty = false } = options;
+  const { seedIfEmpty = false, showGradeLabels = false } = options;
   const [items, setItems] = useState<RouletteItemRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -95,17 +98,29 @@ export function useRouletteItemsSync(eventId: string, options: Options = {}) {
 
   const displayLabels = useMemo(
     () =>
-      displaySorted.map((item) => rouletteSegmentDisplayText(item, displaySorted.length || 1)),
-    [displaySorted],
+      displaySorted.map((item) =>
+        rouletteSegmentDisplayText(item, displaySorted.length || 1, { showGradeLabels }),
+      ),
+    [displaySorted, showGradeLabels],
   );
 
   const editorItems = useMemo(
     () =>
-      displaySorted.map((item) => ({
-        id: item.id,
-        label: item.name.trim() || item.label.trim() || "—",
-      })),
-    [displaySorted],
+      displaySorted.map((item) => {
+        const name = item.name.trim();
+        const grade = item.label.trim();
+        const chip =
+          showGradeLabels && grade && name
+            ? `${grade} ${name}`
+            : name || grade || "—";
+        return {
+          id: item.id,
+          label: chip,
+          gradeLabel: grade,
+          itemName: name || grade || "—",
+        };
+      }),
+    [displaySorted, showGradeLabels],
   );
 
   const addItem = useCallback(
@@ -144,15 +159,32 @@ export function useRouletteItemsSync(eventId: string, options: Options = {}) {
     [eventId],
   );
 
+  const updateItemGradeLabel = useCallback(
+    async (id: string, gradeLabel: string) => {
+      setBusy(true);
+      try {
+        await updateDoc(doc(db, "events", eventId, "rouletteItems", id), {
+          label: gradeLabel.trim(),
+          updatedAt: serverTimestamp(),
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [eventId],
+  );
+
   return {
     items,
     displaySorted,
     displayLabels,
     editorItems,
+    remainingCount: displaySorted.length,
     loading,
     busy,
     addItem,
     removeItem,
+    updateItemGradeLabel,
     maxItems: MAX_ITEMS,
   };
 }

@@ -119,8 +119,10 @@ export function useRouletteStateSync(
 
   const resultText = useMemo(() => {
     if (state.status !== "finished") return null;
-    return rouletteWinnerDisplayText(state.winnerItemLabel, state.winnerItemName);
-  }, [state.status, state.winnerItemLabel, state.winnerItemName]);
+    return rouletteWinnerDisplayText(state.winnerItemLabel, state.winnerItemName, {
+      showGradeLabels: settings.showGradeLabels,
+    });
+  }, [state.status, state.winnerItemLabel, state.winnerItemName, settings.showGradeLabels]);
 
   /** 途中参加時は残り時間だけアニメーション */
   const spinAnimationMs = useMemo(() => {

@@ -10,6 +10,10 @@ export type RouletteSettings = {
   spinDurationMs: number;
   preventSameConsecutive: boolean;
   removeWinnerAfterSpin: boolean;
+  /** 等級ラベル（1等など）をルーレット・結果に表示する */
+  showGradeLabels: boolean;
+  /** 残り景品数を参加者・運営画面に表示する */
+  showRemainingCount: boolean;
   updatedAt?: Timestamp;
 };
 
@@ -55,6 +59,8 @@ export const DEFAULT_ROULETTE_SETTINGS: RouletteSettings = {
   spinDurationMs: 3000,
   preventSameConsecutive: true,
   removeWinnerAfterSpin: false,
+  showGradeLabels: false,
+  showRemainingCount: false,
 };
 
 export const DEFAULT_ROULETTE_STATE: RouletteState = {
@@ -205,6 +211,8 @@ export function normalizeRouletteSettings(data: unknown): RouletteSettings {
     spinDurationMs: spinMs,
     preventSameConsecutive: o.preventSameConsecutive !== false,
     removeWinnerAfterSpin: o.removeWinnerAfterSpin === true,
+    showGradeLabels: o.showGradeLabels === true,
+    showRemainingCount: o.showRemainingCount === true,
     updatedAt: o.updatedAt as Timestamp | undefined,
   };
 }

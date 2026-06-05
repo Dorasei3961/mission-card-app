@@ -25,8 +25,13 @@ export function ParticipantRouletteClient({ eventId }: Props) {
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
   const [featureOn, setFeatureOn] = useState(false);
-  const { displaySorted, displayLabels, loading: itemsLoading } = useRouletteItemsSync(eventId);
   const { settings, loading: settingsLoading } = useRouletteSettingsSync(eventId);
+  const {
+    displaySorted,
+    displayLabels,
+    remainingCount,
+    loading: itemsLoading,
+  } = useRouletteItemsSync(eventId, { showGradeLabels: settings.showGradeLabels });
   const {
     loading: stateLoading,
     visualRotation,
@@ -116,6 +121,9 @@ export function ParticipantRouletteClient({ eventId }: Props) {
                   : settings.controlMode === "participant"
                     ? "準備ができたらSTARTを押してください"
                     : "運営の抽選開始をお待ちください"
+              }
+              remainingCount={
+                settings.showRemainingCount ? remainingCount : null
               }
             />
           )}

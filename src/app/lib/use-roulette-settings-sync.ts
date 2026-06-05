@@ -61,6 +61,8 @@ export function useRouletteSettingsSync(eventId: string, options: Options = {}) 
           | "controlMode"
           | "preventSameConsecutive"
           | "removeWinnerAfterSpin"
+          | "showGradeLabels"
+          | "showRemainingCount"
         >
       >,
     ) => {
@@ -101,6 +103,16 @@ export function useRouletteSettingsSync(eventId: string, options: Options = {}) 
     [saveSettings],
   );
 
+  const updateShowGradeLabels = useCallback(
+    (showGradeLabels: boolean) => saveSettings({ showGradeLabels }),
+    [saveSettings],
+  );
+
+  const updateShowRemainingCount = useCallback(
+    (showRemainingCount: boolean) => saveSettings({ showRemainingCount }),
+    [saveSettings],
+  );
+
   return {
     settings,
     loading,
@@ -111,5 +123,7 @@ export function useRouletteSettingsSync(eventId: string, options: Options = {}) 
     updateControlMode,
     updatePreventSameConsecutive,
     updateRemoveWinnerAfterSpin,
+    updateShowGradeLabels,
+    updateShowRemainingCount,
   };
 }

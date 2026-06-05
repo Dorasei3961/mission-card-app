@@ -34,6 +34,8 @@ type Props = {
   waitMessage?: string;
   /** 同期モードの回転アニメ時間（途中参加時は残り時間） */
   spinAnimationMs?: number;
+  /** 残り景品数（null のとき非表示） */
+  remainingCount?: number | null;
 };
 
 function normalizeDeg(deg: number): number {
@@ -163,6 +165,7 @@ export function SimpleRouletteCanvas({
   spinDisabled = false,
   waitMessage = "運営の抽選開始をお待ちください",
   spinAnimationMs,
+  remainingCount = null,
 }: Props) {
   const animDurationMs = spinAnimationMs ?? spinDurationMs;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -399,6 +402,12 @@ export function SimpleRouletteCanvas({
             )}
           </div>
         </section>
+      ) : null}
+
+      {remainingCount != null ? (
+        <p className="mt-3 text-center text-sm font-bold text-[#6D28D9]">
+          残り <span className="text-lg">{remainingCount}</span> 種類
+        </p>
       ) : null}
 
       <div ref={containerRef} className="relative mx-auto mt-4 w-full max-w-[320px]">

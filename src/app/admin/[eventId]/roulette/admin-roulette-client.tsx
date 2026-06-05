@@ -8,6 +8,7 @@ import { db } from "../../../lib/firebase";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
 import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
+import type { RouletteItemRow } from "../../../lib/roulette-operations";
 import { useRouletteHistorySync } from "../../../lib/use-roulette-history-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
 import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
@@ -57,22 +58,73 @@ function OptionToggle({
   );
 }
 
+function GradeLabelEditor({
+  items,
+  busy,
+  disabled,
+  onSave,
+}: {
+  items: RouletteItemRow[];
+  busy: boolean;
+  disabled: boolean;
+  onSave: (id: string, gradeLabel: string) => void | Promise<void>;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setDrafts(Object.fromEntries(items.map((item) => [item.id, item.label])));
+  }, [items]);
+
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-[#6B7280]">項目を追加すると等級ラベルを設定できます</p>
+    );
+  }
+
+  return (
+    <ul className="space-y-2">
+      {items.map((item) => {
+        const name = item.name.trim() || item.label.trim() || "—";
+        const draft = drafts[item.id] ?? "";
+        const saved = item.label.trim();
+        const dirty = draft.trim() !== saved;
+        return (
+          <li
+            key={item.id}
+            className="flex items-center gap-2 rounded-xl border border-violet-100 px-3 py-2"
+          >
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-[#374151]">
+              {name}
+            </span>
+            <input
+              value={draft}
+              onChange={(e) =>
+                setDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
+              }
+              placeholder="1等"
+              disabled={busy || disabled}
+              className="h-9 w-24 rounded-lg border border-violet-200 px-2 text-sm"
+            />
+            <button
+              type="button"
+              disabled={busy || disabled || !dirty}
+              onClick={() => void onSave(item.id, draft.trim())}
+              className="rounded-lg bg-[#7C3AED] px-3 py-1.5 text-xs font-bold text-white disabled:opacity-45"
+            >
+              保存
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function AdminRouletteClient({ eventId }: Props) {
   useRedirectIfEventMissing(eventId);
   const { allowed } = useEventAdminAccess({ eventId });
   const [eventTitle, setEventTitle] = useState("イベント");
   const [nameDraft, setNameDraft] = useState("");
-
-  const {
-    displaySorted,
-    displayLabels,
-    editorItems,
-    loading: itemsLoading,
-    busy: itemsBusy,
-    addItem,
-    removeItem,
-    maxItems,
-  } = useRouletteItemsSync(eventId, { seedIfEmpty: true });
 
   const {
     settings,
@@ -83,9 +135,29 @@ export function AdminRouletteClient({ eventId }: Props) {
     updateControlMode,
     updatePreventSameConsecutive,
     updateRemoveWinnerAfterSpin,
+    updateShowGradeLabels,
+    updateShowRemainingCount,
   } = useRouletteSettingsSync(eventId, { seedIfMissing: true });
 
-  const { rows: historyRows, loading: historyLoading, spunByLabel } = useRouletteHistorySync(eventId);
+  const {
+    displaySorted,
+    displayLabels,
+    editorItems,
+    remainingCount,
+    loading: itemsLoading,
+    busy: itemsBusy,
+    addItem,
+    removeItem,
+    updateItemGradeLabel,
+    maxItems,
+  } = useRouletteItemsSync(eventId, {
+    seedIfEmpty: true,
+    showGradeLabels: settings.showGradeLabels,
+  });
+
+  const { rows: historyRows, loading: historyLoading, spunByLabel } = useRouletteHistorySync(eventId, {
+    showGradeLabels: settings.showGradeLabels,
+  });
 
   const {
     loading: stateLoading,
@@ -159,6 +231,9 @@ export function AdminRouletteClient({ eventId }: Props) {
                 externalResult={resultText}
                 onRequestSpin={() => void handleStart()}
                 spinDisabled={spinBusy || isFinished}
+                remainingCount={
+                  settings.showRemainingCount ? remainingCount : null
+                }
               />
               {isFinished ? (
                 <button
@@ -255,8 +330,43 @@ export function AdminRouletteClient({ eventId }: Props) {
               disabled={settingsBusy}
               onToggle={() => void updateRemoveWinnerAfterSpin(!settings.removeWinnerAfterSpin)}
             />
+            <OptionToggle
+              label="等級ラベルを表示"
+              description="1等・参加賞などの等級をルーレットと抽選結果に表示します"
+              on={settings.showGradeLabels}
+              disabled={settingsBusy}
+              onToggle={() => void updateShowGradeLabels(!settings.showGradeLabels)}
+            />
+            <OptionToggle
+              label="残り景品数を表示"
+              description="ルーレット上に残りの景品種類数を表示します"
+              on={settings.showRemainingCount}
+              disabled={settingsBusy}
+              onToggle={() => void updateShowRemainingCount(!settings.showRemainingCount)}
+            />
           </div>
         </section>
+
+        {settings.showGradeLabels ? (
+          <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+            <h2 className="text-sm font-bold text-[#111827]">等級ラベル設定</h2>
+            <p className="mt-1 text-[11px] text-[#6B7280]">
+              各景品に等級（例: 1等・参加賞）を設定できます
+            </p>
+            {loading ? (
+              <p className="mt-4 text-center text-sm text-[#6B7280]">読み込み中…</p>
+            ) : (
+              <div className="mt-3">
+                <GradeLabelEditor
+                  items={displaySorted}
+                  busy={itemsBusy}
+                  disabled={isSpinning}
+                  onSave={updateItemGradeLabel}
+                />
+              </div>
+            )}
+          </section>
+        ) : null}
 
         <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
           <h2 className="text-sm font-bold text-[#111827]">抽選履歴</h2>

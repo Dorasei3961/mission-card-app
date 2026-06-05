@@ -37,7 +37,11 @@ function formatHistoryTime(raw: unknown): string {
   });
 }
 
-function mapHistoryDoc(id: string, raw: Record<string, unknown>): RouletteHistoryRow {
+function mapHistoryDoc(
+  id: string,
+  raw: Record<string, unknown>,
+  showGradeLabels: boolean,
+): RouletteHistoryRow {
   const label = typeof raw.label === "string" ? raw.label : "";
   const name = typeof raw.name === "string" ? raw.name : "";
   const spunBy = raw.spunBy === "participant" ? "participant" : "admin";
@@ -51,14 +55,19 @@ function mapHistoryDoc(id: string, raw: Record<string, unknown>): RouletteHistor
     itemId: typeof raw.itemId === "string" ? raw.itemId : "",
     label,
     name,
-    displayText: rouletteWinnerDisplayText(label, name),
+    displayText: rouletteWinnerDisplayText(label, name, { showGradeLabels }),
     spunBy,
     createdAt,
     createdAtText: formatHistoryTime(raw.createdAt),
   };
 }
 
-export function useRouletteHistorySync(eventId: string) {
+type Options = {
+  showGradeLabels?: boolean;
+};
+
+export function useRouletteHistorySync(eventId: string, options: Options = {}) {
+  const { showGradeLabels = false } = options;
   const [rows, setRows] = useState<RouletteHistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -71,13 +80,17 @@ export function useRouletteHistorySync(eventId: string) {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setRows(snap.docs.map((d) => mapHistoryDoc(d.id, d.data() as Record<string, unknown>)));
+        setRows(
+          snap.docs.map((d) =>
+            mapHistoryDoc(d.id, d.data() as Record<string, unknown>, showGradeLabels),
+          ),
+        );
         setLoading(false);
       },
       () => setLoading(false),
     );
     return () => unsub();
-  }, [eventId]);
+  }, [eventId, showGradeLabels]);
 
   const spunByLabel = useMemo(
     () =>
