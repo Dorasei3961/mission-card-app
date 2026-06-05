@@ -8,6 +8,7 @@ import { db } from "../../../lib/firebase";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
 import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
+import { useRouletteHistorySync } from "../../../lib/use-roulette-history-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
 import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
 
@@ -15,6 +16,46 @@ type Props = { eventId: string };
 
 const BG = "min-h-screen bg-gradient-to-b from-[#FFF7E8] via-[#FFF5EE] to-[#EDE9FE]";
 const SPIN_OPTIONS = [3000, 4000, 5000, 7000] as const;
+
+function OptionToggle({
+  label,
+  description,
+  on,
+  disabled,
+  onToggle,
+}: {
+  label: string;
+  description: string;
+  on: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-[#111827]">{label}</p>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-[#6B7280]">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        disabled={disabled}
+        onClick={onToggle}
+        className={`relative mt-0.5 h-[30px] w-[52px] shrink-0 rounded-full transition-colors ${
+          on ? "bg-[#7C3AED]" : "bg-zinc-300"
+        } disabled:opacity-45`}
+      >
+        <span
+          className={`absolute top-[3px] left-[3px] h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+            on ? "translate-x-[22px]" : "translate-x-0"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
 
 export function AdminRouletteClient({ eventId }: Props) {
   useRedirectIfEventMissing(eventId);
@@ -40,7 +81,11 @@ export function AdminRouletteClient({ eventId }: Props) {
     updateName,
     updateSpinDurationMs,
     updateControlMode,
+    updatePreventSameConsecutive,
+    updateRemoveWinnerAfterSpin,
   } = useRouletteSettingsSync(eventId, { seedIfMissing: true });
+
+  const { rows: historyRows, loading: historyLoading, spunByLabel } = useRouletteHistorySync(eventId);
 
   const {
     loading: stateLoading,
@@ -191,6 +236,57 @@ export function AdminRouletteClient({ eventId }: Props) {
               参加者も操作可
             </button>
           </div>
+
+          <p className="mt-5 text-[11px] font-bold text-[#6B7280]">抽選オプション</p>
+          <div className="mt-2 flex flex-col gap-2">
+            <OptionToggle
+              label="連続同じ結果を防ぐ"
+              description="前回と同じ景品が連続で当たらないようにします"
+              on={settings.preventSameConsecutive}
+              disabled={settingsBusy}
+              onToggle={() =>
+                void updatePreventSameConsecutive(!settings.preventSameConsecutive)
+              }
+            />
+            <OptionToggle
+              label="当選後に景品を除外"
+              description="「次の抽選へ」で当選した景品をルーレットから削除します"
+              on={settings.removeWinnerAfterSpin}
+              disabled={settingsBusy}
+              onToggle={() => void updateRemoveWinnerAfterSpin(!settings.removeWinnerAfterSpin)}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+          <h2 className="text-sm font-bold text-[#111827]">抽選履歴</h2>
+          <p className="mt-1 text-[11px] text-[#6B7280]">直近30件を新しい順に表示します</p>
+          {historyLoading ? (
+            <p className="mt-4 text-center text-sm text-[#6B7280]">読み込み中…</p>
+          ) : historyRows.length === 0 ? (
+            <p className="mt-4 rounded-xl border border-dashed border-violet-200 bg-violet-50/50 px-3 py-6 text-center text-sm text-[#6B7280]">
+              まだ抽選履歴はありません
+            </p>
+          ) : (
+            <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
+              {historyRows.map((row) => (
+                <li
+                  key={row.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-violet-100 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-[#111827]">{row.displayText}</p>
+                    <p className="mt-0.5 text-[11px] text-[#6B7280]">
+                      {spunByLabel[row.spunBy]}が操作
+                    </p>
+                  </div>
+                  <time className="shrink-0 text-[11px] font-medium text-[#9CA3AF]">
+                    {row.createdAtText}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <Link

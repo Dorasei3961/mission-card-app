@@ -1,11 +1,11 @@
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   runTransaction,
   serverTimestamp,
   setDoc,
-  updateDoc,
   type Firestore,
 } from "firebase/firestore";
 import {
@@ -194,7 +194,7 @@ export async function finalizeRouletteSpin(
 
 /**
  * 当選結果を確認して idle に戻す。
- * removeWinnerAfterSpin が ON のときのみ、ここで当選景品を除外（active: false）する。
+ * removeWinnerAfterSpin が ON のときのみ、当選景品をルーレット項目から削除する。
  */
 export async function acknowledgeRouletteResult(
   db: Firestore,
@@ -212,12 +212,9 @@ export async function acknowledgeRouletteResult(
 
     if (removeWinnerAfterSpin && winnerItemId) {
       try {
-        await updateDoc(doc(db, "events", eventId, "rouletteItems", winnerItemId), {
-          active: false,
-          updatedAt: serverTimestamp(),
-        });
+        await deleteDoc(doc(db, "events", eventId, "rouletteItems", winnerItemId));
       } catch (e) {
-        console.warn("[roulette] acknowledge deactivate skipped", e);
+        console.warn("[roulette] acknowledge remove item skipped", e);
       }
     }
     return true;

@@ -52,7 +52,18 @@ export function useRouletteSettingsSync(eventId: string, options: Options = {}) 
   }, [eventId, seedIfMissing]);
 
   const saveSettings = useCallback(
-    async (patch: Partial<Pick<RouletteSettings, "name" | "spinDurationMs" | "controlMode">>) => {
+    async (
+      patch: Partial<
+        Pick<
+          RouletteSettings,
+          | "name"
+          | "spinDurationMs"
+          | "controlMode"
+          | "preventSameConsecutive"
+          | "removeWinnerAfterSpin"
+        >
+      >,
+    ) => {
       setBusy(true);
       try {
         const settingsRef = doc(db, "events", eventId, "rouletteSettings", "main");
@@ -80,6 +91,16 @@ export function useRouletteSettingsSync(eventId: string, options: Options = {}) 
     [saveSettings],
   );
 
+  const updatePreventSameConsecutive = useCallback(
+    (preventSameConsecutive: boolean) => saveSettings({ preventSameConsecutive }),
+    [saveSettings],
+  );
+
+  const updateRemoveWinnerAfterSpin = useCallback(
+    (removeWinnerAfterSpin: boolean) => saveSettings({ removeWinnerAfterSpin }),
+    [saveSettings],
+  );
+
   return {
     settings,
     loading,
@@ -88,5 +109,7 @@ export function useRouletteSettingsSync(eventId: string, options: Options = {}) 
     updateName,
     updateSpinDurationMs,
     updateControlMode,
+    updatePreventSameConsecutive,
+    updateRemoveWinnerAfterSpin,
   };
 }
