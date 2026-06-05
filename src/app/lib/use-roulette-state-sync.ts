@@ -8,7 +8,7 @@ import {
   acknowledgeRouletteResult,
   finalizeRouletteSpin,
   predictFinalizeStoredRotationDeg,
-  sortRouletteItemsByOrder,
+  prepareRouletteSpinItems,
   startRouletteSpin,
   type RouletteItemRow,
 } from "./roulette-operations";
@@ -28,11 +28,6 @@ type Options = {
   seedIfMissing?: boolean;
 };
 
-/** ルーレット表示項目と抽選対象を一致させる（active フィルターを使わない） */
-function itemsForSpin(rows: RouletteItemRow[]): RouletteItemRow[] {
-  return sortRouletteItemsByOrder(rows).map((row) => ({ ...row, active: true }));
-}
-
 export function useRouletteStateSync(
   eventId: string,
   settings: RouletteSettings,
@@ -49,7 +44,7 @@ export function useRouletteStateSync(
   const seedingRef = useRef(false);
   const spinItemsRef = useRef<RouletteItemRow[]>([]);
 
-  const spinPool = useMemo(() => itemsForSpin(spinItems), [spinItems]);
+  const spinPool = useMemo(() => prepareRouletteSpinItems(spinItems), [spinItems]);
   spinItemsRef.current = spinPool;
 
   useEffect(() => {
@@ -105,6 +100,15 @@ export function useRouletteStateSync(
     rotationSyncedNonceRef.current = state.spinNonce;
     setVisualRotation((prev) => clockwiseEndRotationForSpin(prev, storedDeg, 5));
   }, [eventId, state, settings]);
+
+  /** 指定当選など、回転なしで finished になったとき盤面を合わせる */
+  useEffect(() => {
+    if (state.status !== "finished") return;
+    if (typeof state.currentRotation !== "number") return;
+    if (rotationSyncedNonceRef.current === state.spinNonce) return;
+    rotationSyncedNonceRef.current = state.spinNonce;
+    setVisualRotation(state.currentRotation);
+  }, [state.status, state.currentRotation, state.spinNonce]);
 
   /** 回転時間経過後に当選を確定（どちらの画面からでも1回実行） */
   useEffect(() => {

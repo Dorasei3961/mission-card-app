@@ -3,6 +3,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -30,6 +31,11 @@ export type RouletteItemRow = {
 /** order フィールドで並べ替え（ルーレットのセグメント順と一致させる） */
 export function sortRouletteItemsByOrder(rows: RouletteItemRow[]): RouletteItemRow[] {
   return [...rows].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "ja"));
+}
+
+/** 表示項目と抽選対象のインデックスを一致させる */
+export function prepareRouletteSpinItems(rows: RouletteItemRow[]): RouletteItemRow[] {
+  return sortRouletteItemsByOrder(rows).map((row) => ({ ...row, active: true }));
 }
 
 /**
@@ -251,11 +257,11 @@ export async function forceRouletteWinner(
   itemsSorted: RouletteItemRow[],
 ): Promise<boolean> {
   const stateRef = doc(db, "events", eventId, "rouletteState", "main");
-  const activeSorted = itemsSorted.filter((i) => i.active);
-  const n = activeSorted.length;
-  const winnerRow = activeSorted.find((i) => i.id === itemId);
+  const pool = prepareRouletteSpinItems(itemsSorted);
+  const n = pool.length;
+  const winnerRow = pool.find((i) => i.id === itemId);
   if (!winnerRow || n <= 0) return false;
-  const winnerIndex = activeSorted.findIndex((i) => i.id === itemId);
+  const winnerIndex = pool.findIndex((i) => i.id === itemId);
   const rotation = computeFinalRotationDeg(winnerIndex, n, 5);
 
   try {
@@ -300,8 +306,9 @@ export async function forceRouletteWinner(
   }
 }
 
-export async function clearAllRouletteHistory(db: Firestore, eventId: string): Promise<void> {
-  const { getDocs, deleteDoc } = await import("firebase/firestore");
+export async function clearAllRouletteHistory(db: Firestore, eventId: string): Promise<number> {
   const snap = await getDocs(collection(db, "events", eventId, "rouletteHistory"));
+  if (snap.empty) return 0;
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
+  return snap.size;
 }

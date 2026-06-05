@@ -9,6 +9,8 @@ import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-mi
 import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
 import type { RouletteItemRow } from "../../../lib/roulette-operations";
+import { rouletteWinnerDisplayText } from "../../../lib/roulette-display";
+import { useRouletteAdminActions } from "../../../lib/use-roulette-admin-actions";
 import { useRouletteHistorySync } from "../../../lib/use-roulette-history-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
 import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
@@ -125,6 +127,7 @@ export function AdminRouletteClient({ eventId }: Props) {
   const { allowed } = useEventAdminAccess({ eventId });
   const [eventTitle, setEventTitle] = useState("イベント");
   const [nameDraft, setNameDraft] = useState("");
+  const [forceItemId, setForceItemId] = useState("");
 
   const {
     settings,
@@ -176,6 +179,15 @@ export function AdminRouletteClient({ eventId }: Props) {
     seedIfMissing: true,
   });
 
+  const {
+    forceBusy,
+    clearHistoryBusy,
+    lastError,
+    clearError,
+    handleForceWinner,
+    handleClearHistory,
+  } = useRouletteAdminActions(eventId, displaySorted);
+
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
       if (!snap.exists()) return;
@@ -188,6 +200,50 @@ export function AdminRouletteClient({ eventId }: Props) {
   useEffect(() => {
     setNameDraft(settings.name);
   }, [settings.name]);
+
+  useEffect(() => {
+    if (!forceItemId && displaySorted.length > 0) {
+      setForceItemId(displaySorted[0].id);
+      return;
+    }
+    if (forceItemId && !displaySorted.some((item) => item.id === forceItemId)) {
+      setForceItemId(displaySorted[0]?.id ?? "");
+    }
+  }, [displaySorted, forceItemId]);
+
+  const adminToolsDisabled = isSpinning || isFinished || displaySorted.length === 0;
+
+  const onForceWinner = async () => {
+    if (!forceItemId || adminToolsDisabled || forceBusy) return;
+    const item = displaySorted.find((row) => row.id === forceItemId);
+    const label = item
+      ? rouletteWinnerDisplayText(item.label, item.name, {
+          showGradeLabels: settings.showGradeLabels,
+        })
+      : "選択した景品";
+    if (
+      !window.confirm(
+        `「${label}」を当選として確定します。\n回転演出は行わず、参加者画面にも即時反映されます。よろしいですか？`,
+      )
+    ) {
+      return;
+    }
+    clearError();
+    await handleForceWinner(forceItemId);
+  };
+
+  const onClearHistory = async () => {
+    if (historyRows.length === 0 || clearHistoryBusy) return;
+    if (
+      !window.confirm(
+        `抽選履歴 ${historyRows.length} 件をすべて削除します。\nこの操作は取り消せません。よろしいですか？`,
+      )
+    ) {
+      return;
+    }
+    clearError();
+    await handleClearHistory();
+  };
 
   if (allowed !== true) {
     return (
@@ -368,9 +424,63 @@ export function AdminRouletteClient({ eventId }: Props) {
           </section>
         ) : null}
 
+        <section className="rounded-[18px] border border-amber-200 bg-amber-50/60 p-4 shadow-[0_8px_24px_rgba(0,0,0,0.06)]">
+          <h2 className="text-sm font-bold text-[#111827]">運営ツール</h2>
+          <p className="mt-1 text-[11px] text-[#6B7280]">
+            テストやトラブル時のみ使用してください（参加者画面にも反映されます）
+          </p>
+
+          <label className="mt-4 block text-[11px] font-bold text-[#6B7280]">当選景品を指定</label>
+          <div className="mt-1 flex gap-2">
+            <select
+              value={forceItemId}
+              onChange={(e) => setForceItemId(e.target.value)}
+              disabled={adminToolsDisabled || forceBusy}
+              className="h-10 min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 text-sm disabled:opacity-45"
+            >
+              {displaySorted.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {rouletteWinnerDisplayText(item.label, item.name, {
+                    showGradeLabels: settings.showGradeLabels,
+                  })}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={adminToolsDisabled || forceBusy || !forceItemId}
+              onClick={() => void onForceWinner()}
+              className="shrink-0 rounded-xl bg-amber-600 px-4 text-xs font-bold text-white disabled:opacity-45"
+            >
+              確定
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-amber-800">
+            待機中（idle）のときのみ実行できます。回転なしで結果が確定します。
+          </p>
+        </section>
+
+        {lastError ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-800">
+            {lastError}
+          </p>
+        ) : null}
+
         <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-4 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
-          <h2 className="text-sm font-bold text-[#111827]">抽選履歴</h2>
-          <p className="mt-1 text-[11px] text-[#6B7280]">直近30件を新しい順に表示します</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-[#111827]">抽選履歴</h2>
+              <p className="mt-1 text-[11px] text-[#6B7280]">直近30件を新しい順に表示します</p>
+            </div>
+            <button
+              type="button"
+              disabled={historyLoading || historyRows.length === 0 || clearHistoryBusy}
+              onClick={() => void onClearHistory()}
+              className="shrink-0 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-bold text-red-700 disabled:opacity-45"
+            >
+              すべて削除
+            </button>
+          </div>
           {historyLoading ? (
             <p className="mt-4 text-center text-sm text-[#6B7280]">読み込み中…</p>
           ) : historyRows.length === 0 ? (
