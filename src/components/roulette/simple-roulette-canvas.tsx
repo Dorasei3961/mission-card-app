@@ -25,6 +25,15 @@ type Props = {
   itemsBusy?: boolean;
   /** 回転時間（ミリ秒）。未指定時は4000 */
   spinDurationMs?: number;
+  /** 第3段階: Firestore同期モード */
+  rotationDeg?: number;
+  externalSpinning?: boolean;
+  externalResult?: string | null;
+  onRequestSpin?: () => void;
+  spinDisabled?: boolean;
+  waitMessage?: string;
+  /** 同期モードの回転アニメ時間（途中参加時は残り時間） */
+  spinAnimationMs?: number;
 };
 
 function normalizeDeg(deg: number): number {
@@ -147,11 +156,20 @@ export function SimpleRouletteCanvas({
   maxItems = MAX_ITEMS,
   itemsBusy = false,
   spinDurationMs = SPIN_DURATION_MS,
+  rotationDeg,
+  externalSpinning = false,
+  externalResult = null,
+  onRequestSpin,
+  spinDisabled = false,
+  waitMessage = "運営の抽選開始をお待ちください",
+  spinAnimationMs,
 }: Props) {
+  const animDurationMs = spinAnimationMs ?? spinDurationMs;
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
   const rotationRef = useRef(0);
+  const isSynced = onRequestSpin !== undefined;
 
   const [items, setItems] = useState<string[]>(DEFAULT_ITEMS);
   const [newItem, setNewItem] = useState("");
@@ -162,6 +180,8 @@ export function SimpleRouletteCanvas({
   const [showFlash, setShowFlash] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [resultVisible, setResultVisible] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const prevExternalResultRef = useRef<string | null>(null);
 
   const sourceItems = externalItems ?? items;
 
@@ -225,14 +245,60 @@ export function SimpleRouletteCanvas({
     return () => clearTimeout(id);
   }, [showConfetti]);
 
+  const effectiveResult = isSynced ? externalResult : result;
+  const effectiveSpinning = isSynced ? externalSpinning || animating : isSpinning;
+
   useEffect(() => {
-    if (!result) {
+    if (!effectiveResult) {
       setResultVisible(false);
       return;
     }
     const id = window.setTimeout(() => setResultVisible(true), 30);
     return () => clearTimeout(id);
-  }, [result]);
+  }, [effectiveResult]);
+
+  /** 同期モード: 終端角へアニメーション */
+  useEffect(() => {
+    if (!isSynced || rotationDeg === undefined) return;
+    if (!externalSpinning) {
+      setAnimating(false);
+      rotationRef.current = rotationDeg;
+      setRotation(rotationDeg);
+      return;
+    }
+    const startRot = rotationRef.current;
+    const endRot = rotationDeg;
+    const startTime = performance.now();
+    setAnimating(true);
+
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startTime) / animDurationMs);
+      const eased = easeOutCubic(t);
+      const current = startRot + (endRot - startRot) * eased;
+      rotationRef.current = current;
+      setRotation(current);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      rotationRef.current = endRot;
+      setRotation(endRot);
+      setAnimating(false);
+      rafRef.current = null;
+    };
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [isSynced, rotationDeg, externalSpinning, animDurationMs]);
+
+  /** 同期モード: 当選演出 */
+  useEffect(() => {
+    if (!isSynced) return;
+    if (externalResult && externalResult !== prevExternalResultRef.current) {
+      setShowFlash(true);
+      setShowConfetti(true);
+    }
+    prevExternalResultRef.current = externalResult;
+  }, [isSynced, externalResult]);
 
   const addItem = () => {
     const trimmed = newItem.trim();
@@ -248,7 +314,7 @@ export function SimpleRouletteCanvas({
   };
 
   const removeItem = (index: number, id?: string) => {
-    if (isSpinning) return;
+    if (effectiveSpinning) return;
     if (onRemoveItem && id) {
       void onRemoveItem(id);
       return;
@@ -257,6 +323,11 @@ export function SimpleRouletteCanvas({
   };
 
   const onSpin = () => {
+    if (isSynced) {
+      if (!canSpin || spinDisabled || effectiveSpinning || cleanItems.length === 0) return;
+      onRequestSpin();
+      return;
+    }
     if (!canSpin || isSpinning || cleanItems.length === 0) return;
     const winnerIndex = Math.floor(Math.random() * cleanItems.length);
     const winner = cleanItems[winnerIndex] ?? "";
@@ -319,7 +390,7 @@ export function SimpleRouletteCanvas({
                 key={item.id}
                 type="button"
                 onClick={() => removeItem(idx, item.id)}
-                disabled={itemsBusy || isSpinning}
+                disabled={itemsBusy || effectiveSpinning}
                 className="rounded-full border border-violet-200 bg-white px-3 py-1 text-xs font-semibold text-[#6D28D9] disabled:opacity-45"
               >
                 {item.label} ×
@@ -374,28 +445,28 @@ export function SimpleRouletteCanvas({
           <button
             type="button"
             onClick={onSpin}
-            disabled={isSpinning || cleanItems.length === 0}
+            disabled={spinDisabled || effectiveSpinning || cleanItems.length === 0}
             className="flex h-14 w-full items-center justify-center rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#9333EA] text-lg font-black text-white shadow-[0_8px_24px_rgba(124,58,237,0.35)] disabled:opacity-45 touch-manipulation"
           >
             START
           </button>
         ) : (
-          <p className="text-center text-xs font-semibold text-[#6B7280]">運営の抽選開始をお待ちください</p>
+          <p className="text-center text-xs font-semibold text-[#6B7280]">{waitMessage}</p>
         )}
       </div>
 
-      {isSpinning ? (
+      {effectiveSpinning ? (
         <p className="mt-4 text-center text-sm font-bold text-[#6D28D9]">抽選中...</p>
       ) : null}
 
-      {result ? (
+      {effectiveResult ? (
         <div
           className={`mt-4 rounded-2xl border border-violet-100 bg-white px-4 py-4 text-center shadow-[0_8px_24px_rgba(124,58,237,0.18)] transition-all duration-500 ${
             resultVisible ? "scale-100 opacity-100" : "scale-90 opacity-0"
           }`}
         >
           <p className="text-xs font-bold uppercase tracking-wide text-[#A78BFA]">抽選結果</p>
-          <p className="mt-2 text-xl font-black text-[#6D28D9]">結果：{result}</p>
+          <p className="mt-2 text-xl font-black text-[#6D28D9]">結果：{effectiveResult}</p>
         </div>
       ) : null}
 

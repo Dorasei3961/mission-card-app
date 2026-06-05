@@ -9,6 +9,7 @@ import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-mi
 import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
+import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
 
 type Props = { eventId: string };
 
@@ -22,6 +23,7 @@ export function AdminRouletteClient({ eventId }: Props) {
   const [nameDraft, setNameDraft] = useState("");
 
   const {
+    displaySorted,
     displayLabels,
     editorItems,
     loading: itemsLoading,
@@ -39,6 +41,23 @@ export function AdminRouletteClient({ eventId }: Props) {
     updateSpinDurationMs,
     updateControlMode,
   } = useRouletteSettingsSync(eventId, { seedIfMissing: true });
+
+  const {
+    loading: stateLoading,
+    visualRotation,
+    spinAnimationMs,
+    isSpinning,
+    isFinished,
+    resultText,
+    canSpin,
+    spinBusy,
+    ackBusy,
+    handleStart,
+    handleAcknowledge,
+  } = useRouletteStateSync(eventId, settings, displaySorted, {
+    role: "admin",
+    seedIfMissing: true,
+  });
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -61,7 +80,7 @@ export function AdminRouletteClient({ eventId }: Props) {
     );
   }
 
-  const loading = itemsLoading || settingsLoading;
+  const loading = itemsLoading || settingsLoading || stateLoading;
 
   return (
     <div className={`${BG} px-4 pb-24 pt-4`}>
@@ -78,17 +97,35 @@ export function AdminRouletteClient({ eventId }: Props) {
           {loading ? (
             <p className="text-center text-sm text-[#6B7280]">読み込み中…</p>
           ) : (
-            <SimpleRouletteCanvas
-              canSpin
-              showItemEditor
-              items={displayLabels}
-              editorItems={editorItems}
-              onAddItem={addItem}
-              onRemoveItem={removeItem}
-              maxItems={maxItems}
-              itemsBusy={itemsBusy}
-              spinDurationMs={settings.spinDurationMs}
-            />
+            <>
+              <SimpleRouletteCanvas
+                canSpin={canSpin}
+                showItemEditor
+                items={displayLabels}
+                editorItems={editorItems}
+                onAddItem={addItem}
+                onRemoveItem={removeItem}
+                maxItems={maxItems}
+                itemsBusy={itemsBusy}
+                spinDurationMs={settings.spinDurationMs}
+                spinAnimationMs={spinAnimationMs}
+                rotationDeg={visualRotation}
+                externalSpinning={isSpinning}
+                externalResult={resultText}
+                onRequestSpin={() => void handleStart()}
+                spinDisabled={spinBusy || isFinished}
+              />
+              {isFinished ? (
+                <button
+                  type="button"
+                  disabled={ackBusy}
+                  onClick={() => void handleAcknowledge()}
+                  className="mt-4 flex h-12 w-full items-center justify-center rounded-2xl border border-violet-200 bg-violet-50 text-sm font-bold text-[#6D28D9] disabled:opacity-45"
+                >
+                  次の抽選へ
+                </button>
+              ) : null}
+            </>
           )}
         </section>
 

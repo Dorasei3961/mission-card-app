@@ -7,6 +7,7 @@ import { SimpleRouletteCanvas } from "@/components/roulette/simple-roulette-canv
 import { db } from "../../../lib/firebase";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
+import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
 import { clearEventScopedStorage } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../../lib/participant-ui";
@@ -24,8 +25,18 @@ export function ParticipantRouletteClient({ eventId }: Props) {
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
   const [featureOn, setFeatureOn] = useState(false);
-  const { displayLabels, loading: itemsLoading } = useRouletteItemsSync(eventId);
+  const { displaySorted, displayLabels, loading: itemsLoading } = useRouletteItemsSync(eventId);
   const { settings, loading: settingsLoading } = useRouletteSettingsSync(eventId);
+  const {
+    loading: stateLoading,
+    visualRotation,
+    spinAnimationMs,
+    isSpinning,
+    resultText,
+    canSpin,
+    spinBusy,
+    handleStart,
+  } = useRouletteStateSync(eventId, settings, displaySorted, { role: "participant" });
 
   useEffect(() => {
     recordParticipantMainPage(eventId, `/events/${eventId}/roulette`);
@@ -85,14 +96,27 @@ export function ParticipantRouletteClient({ eventId }: Props) {
               ? "ボタンからルーレットを回せます"
               : "運営が抽選を開始すると結果が表示されます"}
           </p>
-          {itemsLoading || settingsLoading ? (
+          {itemsLoading || settingsLoading || stateLoading ? (
             <p className="mt-4 text-center text-sm text-[#6B7280]">読み込み中…</p>
           ) : (
             <SimpleRouletteCanvas
               className="mt-4"
-              canSpin={settings.controlMode === "participant"}
+              canSpin={canSpin}
               items={displayLabels}
               spinDurationMs={settings.spinDurationMs}
+              spinAnimationMs={spinAnimationMs}
+              rotationDeg={visualRotation}
+              externalSpinning={isSpinning}
+              externalResult={resultText}
+              onRequestSpin={() => void handleStart()}
+              spinDisabled={spinBusy}
+              waitMessage={
+                isSpinning
+                  ? "抽選中です…"
+                  : settings.controlMode === "participant"
+                    ? "準備ができたらSTARTを押してください"
+                    : "運営の抽選開始をお待ちください"
+              }
             />
           )}
         </section>
