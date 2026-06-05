@@ -36,6 +36,11 @@ function mapDocToRow(id: string, raw: Record<string, unknown>): RouletteItemRow 
   };
 }
 
+/** ルーレットに表示できる項目（name または label があるもの） */
+function hasDisplayText(item: RouletteItemRow): boolean {
+  return Boolean(item.name.trim() || item.label.trim());
+}
+
 export function useRouletteItemsSync(eventId: string, options: Options = {}) {
   const { seedIfEmpty = false } = options;
   const [items, setItems] = useState<RouletteItemRow[]>([]);
@@ -82,27 +87,31 @@ export function useRouletteItemsSync(eventId: string, options: Options = {}) {
     void seed();
   }, [eventId, seedIfEmpty]);
 
-  const activeSorted = useMemo(() => items.filter((i) => i.active), [items]);
+  /** 第1段階: active ではなく表示テキスト有無で判定（旧データの active:false も表示） */
+  const displaySorted = useMemo(
+    () => sortRouletteItemsByOrder(items).filter(hasDisplayText),
+    [items],
+  );
 
   const displayLabels = useMemo(
     () =>
-      activeSorted.map((item) => rouletteSegmentDisplayText(item, activeSorted.length || 1)),
-    [activeSorted],
+      displaySorted.map((item) => rouletteSegmentDisplayText(item, displaySorted.length || 1)),
+    [displaySorted],
   );
 
   const editorItems = useMemo(
     () =>
-      activeSorted.map((item) => ({
+      displaySorted.map((item) => ({
         id: item.id,
         label: item.name.trim() || item.label.trim() || "—",
       })),
-    [activeSorted],
+    [displaySorted],
   );
 
   const addItem = useCallback(
     async (name: string) => {
       const trimmed = name.trim();
-      if (!trimmed || items.length >= MAX_ITEMS) return;
+      if (!trimmed || displaySorted.length >= MAX_ITEMS) return;
       setBusy(true);
       try {
         const maxOrder = items.reduce((m, r) => Math.max(m, r.order), 0);
@@ -120,7 +129,7 @@ export function useRouletteItemsSync(eventId: string, options: Options = {}) {
         setBusy(false);
       }
     },
-    [eventId, items],
+    [eventId, items, displaySorted.length],
   );
 
   const removeItem = useCallback(
@@ -137,7 +146,7 @@ export function useRouletteItemsSync(eventId: string, options: Options = {}) {
 
   return {
     items,
-    activeSorted,
+    displaySorted,
     displayLabels,
     editorItems,
     loading,

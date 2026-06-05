@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { SimpleRouletteCanvas } from "@/components/roulette/simple-roulette-canvas";
 import { db } from "../../../lib/firebase";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
+import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
 import { clearEventScopedStorage } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../../lib/participant-ui";
@@ -24,6 +25,7 @@ export function ParticipantRouletteClient({ eventId }: Props) {
   const [eventActive, setEventActive] = useState(true);
   const [featureOn, setFeatureOn] = useState(false);
   const { displayLabels, loading: itemsLoading } = useRouletteItemsSync(eventId);
+  const { settings, loading: settingsLoading } = useRouletteSettingsSync(eventId);
 
   useEffect(() => {
     recordParticipantMainPage(eventId, `/events/${eventId}/roulette`);
@@ -77,14 +79,21 @@ export function ParticipantRouletteClient({ eventId }: Props) {
 
         <section className="rounded-[18px] border border-[#E9D5FF] bg-white p-5 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
           <p className="text-[11px] font-bold uppercase tracking-wide text-[#A78BFA]">ルーレット</p>
-          <h2 className="mt-1 text-xl font-black text-[#111827]">景品ルーレット</h2>
+          <h2 className="mt-1 text-xl font-black text-[#111827]">{settings.name}</h2>
           <p className="mt-2 text-sm font-medium text-[#6B7280]">
-            運営が抽選を開始すると結果が表示されます
+            {settings.controlMode === "participant"
+              ? "ボタンからルーレットを回せます"
+              : "運営が抽選を開始すると結果が表示されます"}
           </p>
-          {itemsLoading ? (
-            <p className="mt-4 text-center text-sm text-[#6B7280]">項目を読み込み中…</p>
+          {itemsLoading || settingsLoading ? (
+            <p className="mt-4 text-center text-sm text-[#6B7280]">読み込み中…</p>
           ) : (
-            <SimpleRouletteCanvas className="mt-4" canSpin={false} items={displayLabels} />
+            <SimpleRouletteCanvas
+              className="mt-4"
+              canSpin={settings.controlMode === "participant"}
+              items={displayLabels}
+              spinDurationMs={settings.spinDurationMs}
+            />
           )}
         </section>
       </main>

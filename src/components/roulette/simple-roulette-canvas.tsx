@@ -23,6 +23,8 @@ type Props = {
   onRemoveItem?: (id: string) => void | Promise<void>;
   maxItems?: number;
   itemsBusy?: boolean;
+  /** 回転時間（ミリ秒）。未指定時は4000 */
+  spinDurationMs?: number;
 };
 
 function normalizeDeg(deg: number): number {
@@ -96,11 +98,15 @@ function drawWheel(
       ctx.translate(Math.cos(mid) * r, Math.sin(mid) * r);
       ctx.rotate(mid + Math.PI / 2);
       ctx.fillStyle = "#1F2937";
-      ctx.font = `700 ${Math.max(11, Math.min(14, size / 24))}px system-ui, sans-serif`;
+      const fontSize =
+        n <= 6 ? 13 : n <= 8 ? 11 : n <= 10 ? 10 : n <= 12 ? 9 : 8;
+      const maxChars = n <= 6 ? 8 : n <= 8 ? 6 : n <= 10 ? 5 : 4;
+      ctx.font = `700 ${fontSize}px system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const label = items[i] ?? "";
-      const display = label.length > 8 ? `${label.slice(0, 7)}…` : label;
+      const display =
+        label.length > maxChars ? `${label.slice(0, Math.max(1, maxChars - 1))}…` : label;
       ctx.fillText(display, 0, 0);
       ctx.restore();
     }
@@ -140,6 +146,7 @@ export function SimpleRouletteCanvas({
   onRemoveItem,
   maxItems = MAX_ITEMS,
   itemsBusy = false,
+  spinDurationMs = SPIN_DURATION_MS,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -263,7 +270,7 @@ export function SimpleRouletteCanvas({
     setResultVisible(false);
 
     const tick = (now: number) => {
-      const t = Math.min(1, (now - startTime) / SPIN_DURATION_MS);
+      const t = Math.min(1, (now - startTime) / spinDurationMs);
       const eased = easeOutCubic(t);
       const current = startRot + (endRot - startRot) * eased;
       rotationRef.current = current;
