@@ -13,16 +13,21 @@ function isAllowedStoredPath(eventId: string, path: string): boolean {
   return true;
 }
 
-/** ホームタブで復帰するパス（無効・未設定時はミッション画面） */
+/** 参加者ホーム（機能一覧）の既定パス */
+export function getDefaultEventHomePage(eventId: string): string {
+  return `/events/${eventId}/features`;
+}
+
+/** ホームタブで復帰するパス（無効・未設定時は機能一覧） */
 export function getLastEventPage(eventId: string): string {
-  if (typeof window === "undefined") return `/events/${eventId}`;
+  if (typeof window === "undefined") return getDefaultEventHomePage(eventId);
   try {
     const raw = localStorage.getItem(participantLastPageStorageKey(eventId))?.trim();
     if (raw && isAllowedStoredPath(eventId, raw)) return raw;
   } catch {
     // ignore
   }
-  return `/events/${eventId}`;
+  return getDefaultEventHomePage(eventId);
 }
 
 /**

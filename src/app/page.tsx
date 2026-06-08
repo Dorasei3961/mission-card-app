@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "./lib/firebase";
 import { getEventSession } from "./lib/event-session";
+import { getLastEventPage } from "./lib/participant-last-page";
 import { isActiveEventRecord } from "./lib/event-list";
 
 type ActiveEvent = {
@@ -30,7 +31,7 @@ export default function HomePage() {
     }
     const session = getEventSession();
     if (session?.eventId) {
-      router.replace(`/events/${session.eventId}`);
+      router.replace(getLastEventPage(session.eventId));
       return;
     }
     setChecking(false);

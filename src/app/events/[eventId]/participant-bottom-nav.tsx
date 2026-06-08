@@ -42,7 +42,9 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
     }
   };
 
+  const isFeaturesHub = matchesSubpath(base, pathname, "features");
   const isHomeSection =
+    isFeaturesHub ||
     pathname === base ||
     pathname === `${base}/` ||
     matchesSubpath(base, pathname, "quiz") ||
@@ -50,11 +52,11 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
     matchesSubpath(base, pathname, "bingo") ||
     matchesSubpath(base, pathname, "roulette");
 
-  const featuresNavActive = matchesSubpath(base, pathname, "features");
+  const featuresNavActive = isFeaturesHub;
   const rankingNavActive = matchesSubpath(base, pathname, "ranking");
   const adminNavActive = matchesSubpath(base, pathname, "manage");
 
-  const homeNavActive = isHomeSection && !featuresNavActive && !rankingNavActive && !adminNavActive;
+  const homeNavActive = isHomeSection && !rankingNavActive && !adminNavActive;
 
   const goHomeTarget = () => {
     void navigateIfEventExists(() => {

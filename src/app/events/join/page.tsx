@@ -232,7 +232,7 @@ export default function EventJoinPage() {
       }
 
       setEventSession({ eventId, participantName: name, uid: participantDocId });
-      router.push(`/events/${eventId}`);
+      router.push(`/events/${eventId}/features`);
     } catch (err) {
       console.error(err);
       setMessage("参加処理に失敗しました。ネットワークと Firestore ルールを確認してください。");

@@ -188,11 +188,13 @@ export function EventFeaturesClient({ eventId }: Props) {
         </header>
 
         <section className="rounded-[18px] border border-white/80 bg-white p-4 shadow-sm">
-          <h2 className="text-base font-bold text-[#111827]">イベント機能</h2>
+          <h2 className="text-base font-bold text-[#111827]">
+            {fromAdmin ? "イベント機能" : "イベントホーム"}
+          </h2>
           <p className="mt-2 text-sm leading-relaxed text-[#6B7280]">
             {fromAdmin
               ? "各機能の運営画面へ進むことができます。"
-              : "利用できるコンテンツを選べます。タップして参加しましょう！"}
+              : "このイベントで使える機能です。参加したいコンテンツを選んでください。"}
           </p>
 
           <ul className="mt-4 space-y-3">
