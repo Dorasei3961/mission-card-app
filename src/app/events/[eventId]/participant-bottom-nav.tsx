@@ -2,13 +2,10 @@
 
 import { doc, getDoc } from "firebase/firestore";
 import { usePathname, useRouter } from "next/navigation";
-import { Home, LayoutGrid, Shield, Trophy } from "lucide-react";
+import { Home, Shield, Trophy } from "lucide-react";
 import { clearEventScopedStorage } from "../../lib/event-session";
 import { db } from "../../lib/firebase";
-import {
-  getLastEventPage,
-  recordParticipantMainPage,
-} from "../../lib/participant-last-page";
+import { getDefaultEventHomePage } from "../../lib/participant-last-page";
 
 export type ParticipantBottomNavProps = {
   eventId: string;
@@ -52,7 +49,6 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
     matchesSubpath(base, pathname, "bingo") ||
     matchesSubpath(base, pathname, "roulette");
 
-  const featuresNavActive = isFeaturesHub;
   const rankingNavActive = matchesSubpath(base, pathname, "ranking");
   const adminNavActive = matchesSubpath(base, pathname, "manage");
 
@@ -60,14 +56,7 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
 
   const goHomeTarget = () => {
     void navigateIfEventExists(() => {
-      router.push(getLastEventPage(eventId));
-    });
-  };
-
-  const goFeatures = () => {
-    void navigateIfEventExists(() => {
-      recordParticipantMainPage(eventId, `/events/${eventId}/features`);
-      router.push(`/events/${eventId}/features?from=participant`);
+      router.push(getDefaultEventHomePage(eventId));
     });
   };
 
@@ -93,14 +82,10 @@ export function ParticipantBottomNav({ eventId, showRankingLink }: ParticipantBo
       className="fixed bottom-0 left-0 right-0 z-40 border-t border-zinc-200 bg-white pb-[max(12px,env(safe-area-inset-bottom))] pt-1 shadow-[0_-2px_12px_rgba(0,0,0,0.04)]"
       aria-label="参加者メイン操作"
     >
-      <div className="mx-auto grid max-w-md grid-cols-4">
+      <div className="mx-auto grid max-w-md grid-cols-3">
         <button type="button" onClick={() => goHomeTarget()} className={itemClass(homeNavActive)}>
           <Home className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
           ホーム
-        </button>
-        <button type="button" onClick={() => goFeatures()} className={itemClass(featuresNavActive)}>
-          <LayoutGrid className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden />
-          機能
         </button>
         {showRankingLink ? (
           <button type="button" onClick={() => goRanking()} className={itemClass(rankingNavActive)}>
