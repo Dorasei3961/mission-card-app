@@ -8,6 +8,8 @@ import { auth, db } from "../../../lib/firebase";
 import { clearEventScopedStorage, getEventSession } from "../../../lib/event-session";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { ParticipantGateLoading } from "../participant-gate-loading";
+import { useParticipantEventGate } from "../../../lib/use-participant-event-gate";
 
 type Participant = {
   uid: string;
@@ -50,6 +52,7 @@ function resolveParticipantDisplayName(data: Record<string, unknown>): string {
 
 export function RankingClient({ eventId }: Props) {
   const router = useRouter();
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId);
   const [eventTitle, setEventTitle] = useState("ランキング");
   const [rankingVisible, setRankingVisible] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
@@ -192,6 +195,10 @@ export function RankingClient({ eventId }: Props) {
     }
     return ranked;
   };
+
+  if (!gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>

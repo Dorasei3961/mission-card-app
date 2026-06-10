@@ -6,12 +6,15 @@ import { filterAdminPinInput } from "../../../lib/admin-pin";
 import { ensureDefaultAdminPinIfMissing } from "../../../lib/default-admin-pin";
 import { verifyEventAdminPin } from "../../../lib/verify-event-admin-pin";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { ParticipantGateLoading } from "../participant-gate-loading";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
+import { useParticipantEventGate } from "../../../lib/use-participant-event-gate";
 
 type Props = { eventId: string };
 
 export function ParticipantManageClient({ eventId }: Props) {
   const router = useRouter();
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId);
   const showRankingLink = useParticipantRankingLink(eventId);
   const [digits, setDigits] = useState(["", "", "", ""]);
   const [error, setError] = useState("");
@@ -67,6 +70,10 @@ export function ParticipantManageClient({ eventId }: Props) {
       setBusy(false);
     }
   };
+
+  if (!gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50 via-orange-50 to-rose-100 px-4 pb-[calc(100px+env(safe-area-inset-bottom))] pt-8">

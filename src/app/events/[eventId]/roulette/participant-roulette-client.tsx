@@ -13,7 +13,9 @@ import { resolveEventFeatures } from "../../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING } from "../../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { ParticipantGateLoading } from "../participant-gate-loading";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
+import { useParticipantEventGate } from "../../../lib/use-participant-event-gate";
 
 type Props = { eventId: string };
 
@@ -21,6 +23,7 @@ const BG = "min-h-screen bg-gradient-to-b from-[#FFF7E8] to-[#FFE9E5]";
 
 export function ParticipantRouletteClient({ eventId }: Props) {
   const router = useRouter();
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId);
   const showRankingLink = useParticipantRankingLink(eventId);
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
@@ -61,6 +64,10 @@ export function ParticipantRouletteClient({ eventId }: Props) {
     });
     return () => unsub();
   }, [eventId, router]);
+
+  if (!gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   if (!featureOn) {
     return (

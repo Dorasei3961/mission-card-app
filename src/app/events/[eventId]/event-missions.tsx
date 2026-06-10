@@ -35,7 +35,9 @@ import {
   MissionSummaryBanner,
 } from "./mission-participant-ui";
 import { ParticipantBottomNav } from "./participant-bottom-nav";
+import { ParticipantGateLoading } from "./participant-gate-loading";
 import { useParticipantRankingLink } from "./use-participant-ranking-link";
+import { useParticipantEventGate } from "../../lib/use-participant-event-gate";
 
 function parseCheckedMissionIdsFromFirestore(raw: unknown): number[] {
   if (!Array.isArray(raw)) return [];
@@ -78,6 +80,7 @@ type Props = {
 
 export function EventMissions({ eventId }: Props) {
   const router = useRouter();
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId);
   const [redirected, setRedirected] = useState(false);
   const [eventTitle, setEventTitle] = useState("");
   const [missions, setMissions] = useState<MissionFields[]>(DEFAULT_MISSIONS_SEED);
@@ -573,6 +576,10 @@ export function EventMissions({ eventId }: Props) {
   ]);
 
   const missionControlsDisabled = !isReady || isClosed;
+
+  if (!gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   return (
     <div className={`${MISSION_PAGE_BG} px-5 pt-5 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>

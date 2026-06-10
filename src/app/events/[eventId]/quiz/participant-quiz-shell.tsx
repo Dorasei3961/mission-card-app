@@ -5,16 +5,23 @@ import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../l
 import { recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { EventQuiz } from "../features/event-quiz";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { ParticipantGateLoading } from "../participant-gate-loading";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
+import { useParticipantEventGate } from "../../../lib/use-participant-event-gate";
 
 type Props = { eventId: string };
 
 export function ParticipantQuizShell({ eventId }: Props) {
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId);
   const showRankingLink = useParticipantRankingLink(eventId);
 
   useEffect(() => {
     recordParticipantMainPage(eventId, `/events/${eventId}/quiz`);
   }, [eventId]);
+
+  if (!gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${PARTICIPANT_MAIN_BOTTOM_PADDING}`}>

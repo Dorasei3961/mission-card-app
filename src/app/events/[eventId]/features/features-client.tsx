@@ -12,7 +12,9 @@ import { resolveEventFeatures } from "../../../lib/event-features";
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { ParticipantGateLoading } from "../participant-gate-loading";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
+import { useParticipantEventGate } from "../../../lib/use-participant-event-gate";
 
 type Props = { eventId: string };
 
@@ -29,15 +31,12 @@ export function EventFeaturesClient({ eventId }: Props) {
   const [eventTitle, setEventTitle] = useState("イベント");
   const [eventActive, setEventActive] = useState(true);
   const [features, setFeatures] = useState(resolveEventFeatures(undefined));
-  const [fromAdmin, setFromAdmin] = useState(false);
+  const [fromAdmin, setFromAdmin] = useState(() => readFromAdminFromUrl());
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId, { enabled: !fromAdmin });
   const [quizTotalCount, setQuizTotalCount] = useState(0);
   const [missionDone, setMissionDone] = useState(0);
   const [missionTotal, setMissionTotal] = useState(0);
   const showRankingLink = useParticipantRankingLink(eventId);
-
-  useEffect(() => {
-    setFromAdmin(readFromAdminFromUrl());
-  }, []);
 
   useEffect(() => {
     if (fromAdmin) return;
@@ -142,6 +141,10 @@ export function EventFeaturesClient({ eventId }: Props) {
     }
     router.replace("/");
   };
+
+  if (!fromAdmin && !gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   return (
     <div className={`${PARTICIPANT_PAGE_BG} px-4 pt-4 ${fromAdmin ? "pb-10" : PARTICIPANT_MAIN_BOTTOM_PADDING}`}>

@@ -35,7 +35,9 @@ import {
 import { PARTICIPANT_MAIN_BOTTOM_PADDING, PARTICIPANT_PAGE_BG } from "../../../lib/participant-ui";
 import { recordParticipantMainPage } from "../../../lib/participant-last-page";
 import { ParticipantBottomNav } from "../participant-bottom-nav";
+import { ParticipantGateLoading } from "../participant-gate-loading";
 import { useParticipantRankingLink } from "../use-participant-ranking-link";
+import { useParticipantEventGate } from "../../../lib/use-participant-event-gate";
 
 type Props = { eventId: string };
 
@@ -93,6 +95,7 @@ function evaluateCard(numbers: BingoCellValue[], gridSize: 3 | 5, drawnNumbers: 
 
 export function ParticipantBingoClient({ eventId }: Props) {
   const router = useRouter();
+  const { allowed: gateAllowed } = useParticipantEventGate(eventId);
   const showRankingLink = useParticipantRankingLink(eventId);
   const [ready, setReady] = useState(false);
   const [eventTitle, setEventTitle] = useState("イベント");
@@ -343,6 +346,10 @@ export function ParticipantBingoClient({ eventId }: Props) {
 
   const displayGridSize = card?.gridSize ?? settings.gridSize;
   const cellSize = displayGridSize === 5 ? "h-14 text-base" : "h-20 text-xl";
+
+  if (!gateAllowed) {
+    return <ParticipantGateLoading />;
+  }
 
   if (!ready) {
     return (

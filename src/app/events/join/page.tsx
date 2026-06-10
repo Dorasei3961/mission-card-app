@@ -18,6 +18,7 @@ import {
 import { auth, db } from "../../lib/firebase";
 import { buildJoinPasswordForgotMailtoHref } from "../../lib/contact-mail";
 import { setEventSession } from "../../lib/event-session";
+import { consumeParticipantFlashMessage } from "../../lib/participant-flash-message";
 import { isActiveEventRecord } from "../../lib/event-list";
 import {
   findExistingParticipantByName,
@@ -76,7 +77,29 @@ export default function EventJoinPage() {
     if (eventNameQuery) setEventName(eventNameQuery);
     setHasCodeInUrl(Boolean(code));
     if (eventId) setEventIdFromUrl(eventId);
+
+    const flash = consumeParticipantFlashMessage();
+    if (flash) setMessage(flash);
   }, []);
+
+  useEffect(() => {
+    if (!eventIdFromUrl) return;
+    const load = async () => {
+      try {
+        const snap = await getDoc(doc(db, "events", eventIdFromUrl));
+        if (!snap.exists()) return;
+        const data = snap.data() as { title?: string };
+        const title = String(data.title ?? "").trim();
+        if (title) {
+          setEventName(title);
+          setHasCodeInUrl(true);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    void load();
+  }, [eventIdFromUrl]);
 
   useEffect(() => {
     const load = async () => {

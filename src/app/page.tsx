@@ -3,11 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "./lib/firebase";
-import { getEventSession } from "./lib/event-session";
-import { getLastEventPage } from "./lib/participant-last-page";
+import {
+  clearEventScopedStorage,
+  EVENT_ENDED_MESSAGE,
+  getEventSession,
+} from "./lib/event-session";
 import { isActiveEventRecord } from "./lib/event-list";
+import { getLastEventPage } from "./lib/participant-last-page";
+import {
+  consumeParticipantFlashMessage,
+  setParticipantFlashMessage,
+} from "./lib/participant-flash-message";
 
 type ActiveEvent = {
   id: string;
@@ -19,22 +27,45 @@ export default function HomePage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [activeEvents, setActiveEvents] = useState<ActiveEvent[]>([]);
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const skipOnce = sessionStorage.getItem("skip_home_event_autoredirect_once");
-      if (skipOnce === "1") {
-        sessionStorage.removeItem("skip_home_event_autoredirect_once");
-        setChecking(false);
+    setFlashMessage(consumeParticipantFlashMessage());
+  }, []);
+
+  useEffect(() => {
+    const run = async () => {
+      if (typeof window !== "undefined") {
+        const skipOnce = sessionStorage.getItem("skip_home_event_autoredirect_once");
+        if (skipOnce === "1") {
+          sessionStorage.removeItem("skip_home_event_autoredirect_once");
+          setChecking(false);
+          return;
+        }
+      }
+
+      const session = getEventSession();
+      if (session?.eventId) {
+        try {
+          const snap = await getDoc(doc(db, "events", session.eventId));
+          if (!snap.exists() || !isActiveEventRecord(snap.data())) {
+            clearEventScopedStorage(session.eventId);
+            setParticipantFlashMessage(EVENT_ENDED_MESSAGE);
+            setFlashMessage(EVENT_ENDED_MESSAGE);
+            setChecking(false);
+            return;
+          }
+        } catch {
+          setChecking(false);
+          return;
+        }
+        router.replace(getLastEventPage(session.eventId));
         return;
       }
-    }
-    const session = getEventSession();
-    if (session?.eventId) {
-      router.replace(getLastEventPage(session.eventId));
-      return;
-    }
-    setChecking(false);
+
+      setChecking(false);
+    };
+    void run();
   }, [router]);
 
   useEffect(() => {
@@ -84,6 +115,12 @@ export default function HomePage() {
           <p className="mt-2 text-sm text-zinc-600">イベント作成・参加ができます。</p>
         </div>
 
+        {flashMessage ? (
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-900">
+            {flashMessage}
+          </p>
+        ) : null}
+
         <div className="flex flex-col gap-4">
           <Link
             href="/events/create"
@@ -131,7 +168,7 @@ export default function HomePage() {
         </section>
 
         <p className="text-center text-xs text-zinc-500">
-          参加済みの場合は自動でイベント画面を開きます（この端末に保存されたとき）。
+          参加済みの場合は、当日中は自動でイベント画面を開きます（この端末に保存されたとき）。
         </p>
       </main>
     </div>
