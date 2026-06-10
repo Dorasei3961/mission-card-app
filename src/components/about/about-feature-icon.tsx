@@ -7,7 +7,7 @@ type Props = {
   className?: string;
 };
 
-/** サービス紹介ページの機能アイコン（public/about/*.svg など） */
+/** サービス紹介ページの機能アイコン（public/images/about/* など） */
 export function AboutFeatureIcon({ src, alt, size, className = "" }: Props) {
   return (
     <Image
