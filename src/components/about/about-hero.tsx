@@ -1,11 +1,13 @@
 import Link from "next/link";
+import { ABOUT_FEATURES } from "./about-feature-data";
+import { AboutFeatureIcon } from "./about-feature-icon";
 import { ABOUT_LINKS } from "./about-links";
 
 const FLOAT_CARDS = [
-  { emoji: "🎯", label: "ミッション", pt: "+20 pt", bg: "#EDE9FE", delay: "about-fade-up-d4" },
-  { emoji: "❓", label: "クイズ", pt: null, bg: "#DBEAFE", delay: "about-fade-up-d5" },
-  { emoji: "🎱", label: "ビンゴ", pt: null, bg: "#D1FAE5", delay: "about-fade-up-d6" },
-  { emoji: "🎡", label: "ルーレット", pt: null, bg: "#FEF3C7", delay: "about-fade-up-d7" },
+  { ...ABOUT_FEATURES[0], pt: "+20 pt", delay: "about-fade-up-d4" },
+  { ...ABOUT_FEATURES[1], pt: null, delay: "about-fade-up-d5" },
+  { ...ABOUT_FEATURES[2], pt: null, delay: "about-fade-up-d6" },
+  { ...ABOUT_FEATURES[3], pt: null, delay: "about-fade-up-d7" },
 ] as const;
 
 function HeroBlobs() {
@@ -73,17 +75,17 @@ export function AboutHero() {
         <div className="about-fade-up-d4 flex flex-wrap justify-center gap-3.5">
           {FLOAT_CARDS.map((c) => (
             <div
-              key={c.label}
+              key={c.title}
               className={`about-display about-brutal ${c.delay} flex items-center gap-3 rounded-[20px] bg-white px-5 py-4 text-[15px] font-extrabold transition hover:-translate-y-1.5 hover:rotate-[-1deg]`}
             >
               <span
-                className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[#1F1035] text-[22px]"
-                style={{ backgroundColor: c.bg }}
+                className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-[#1F1035] p-1.5"
+                style={{ backgroundColor: c.iconBg }}
               >
-                {c.emoji}
+                <AboutFeatureIcon src={c.imageSrc} alt={c.title} size={32} />
               </span>
               <div className="text-left">
-                <div>{c.label}</div>
+                <div>{c.title}</div>
                 {c.pt ? (
                   <span className="mt-0.5 inline-block rounded-full border-[1.5px] border-[#F59E0B] bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-extrabold text-[#F59E0B]">
                     {c.pt}

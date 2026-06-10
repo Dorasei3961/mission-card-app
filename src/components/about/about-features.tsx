@@ -1,32 +1,5 @@
-const FEATURES = [
-  {
-    emoji: "🎯",
-    title: "ミッション",
-    description:
-      "交流・参加・チャレンジをポイント化。ゲーム感覚で参加者が自然と動き出します。",
-    iconBg: "#EDE9FE",
-  },
-  {
-    emoji: "❓",
-    title: "クイズ",
-    description:
-      "リアルタイムで全員が参加するクイズ。会場が一体になる盛り上がりを体感して！",
-    iconBg: "#DBEAFE",
-  },
-  {
-    emoji: "🎱",
-    title: "ビンゴ",
-    description: "定番のビンゴをスマホでそのまま実現。カード配りも抽選機も不要です。",
-    iconBg: "#D1FAE5",
-  },
-  {
-    emoji: "🎡",
-    title: "ルーレット",
-    description:
-      "景品演出や抽選をルーレットで華やかに。「誰が当たる？」のドキドキを演出。",
-    iconBg: "#FEF3C7",
-  },
-] as const;
+import { ABOUT_FEATURES } from "./about-feature-data";
+import { AboutFeatureIcon } from "./about-feature-icon";
 
 export function AboutFeatures() {
   return (
@@ -52,17 +25,16 @@ export function AboutFeatures() {
         </div>
 
         <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {FEATURES.map((f) => (
+          {ABOUT_FEATURES.map((f) => (
             <li
               key={f.title}
               className="about-brutal cursor-default rounded-3xl bg-[#FFFBF0] p-6 transition hover:-translate-x-1 hover:-translate-y-1 hover:shadow-[8px_8px_0_#1F1035] sm:p-7"
             >
               <span
-                className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-[2.5px] border-[#1F1035] text-[26px]"
+                className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border-[2.5px] border-[#1F1035] p-2"
                 style={{ backgroundColor: f.iconBg }}
-                aria-hidden
               >
-                {f.emoji}
+                <AboutFeatureIcon src={f.imageSrc} alt={f.title} size={40} />
               </span>
               <h3 className="about-display mb-2 text-xl font-black text-[#1F1035]">{f.title}</h3>
               <p className="text-sm leading-relaxed text-[#6B7280]">{f.description}</p>
