@@ -18,6 +18,9 @@ import { useParticipantEventGate } from "../../../lib/use-participant-event-gate
 
 type Props = { eventId: string };
 
+/** 機能がイベントで未有効化のとき（参加者向け） */
+const FEATURE_DISABLED_HINT = "運営が有効化するまでお待ちください";
+
 /** URL は参加者経由のみ ?from=admin を付ける。未指定・それ以外は参加者モード */
 function readFromAdminFromUrl(): boolean {
   if (typeof window === "undefined") return false;
@@ -130,10 +133,6 @@ export function EventFeaturesClient({ eventId }: Props) {
     return `${quizTotalCount}問出題中`;
   }, [features.quiz, quizTotalCount]);
 
-  const soon = () => {
-    window.alert("今後追加予定です");
-  };
-
   const handleGoTop = () => {
     if (typeof window !== "undefined") {
       localStorage.removeItem(`last_event_page_${eventId}`);
@@ -238,6 +237,8 @@ export function EventFeaturesClient({ eventId }: Props) {
                   </p>
                   {!fromAdmin && features.mission ? (
                     <p className="mt-2 text-[11px] font-semibold text-[#7C3AED]">{missionProgressLabel}</p>
+                  ) : !fromAdmin && !features.mission ? (
+                    <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">{FEATURE_DISABLED_HINT}</p>
                   ) : null}
                 </span>
                 <span className={`shrink-0 ${features.mission || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
@@ -281,6 +282,8 @@ export function EventFeaturesClient({ eventId }: Props) {
                   </p>
                   {features.quiz && activeQuizHint ? (
                     <p className="mt-2 text-[11px] font-semibold text-[#6B7280]">{activeQuizHint}</p>
+                  ) : !fromAdmin && !features.quiz ? (
+                    <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">{FEATURE_DISABLED_HINT}</p>
                   ) : null}
                 </span>
                 <span className={`shrink-0 ${features.quiz || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
@@ -293,10 +296,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                 type="button"
                 disabled={!features.bingo && !fromAdmin}
                 onClick={() => {
-                  if (!features.bingo && !fromAdmin) {
-                    soon();
-                    return;
-                  }
+                  if (!features.bingo && !fromAdmin) return;
                   if (fromAdmin) router.push(`/admin/${eventId}/bingo`);
                   else router.push(`/events/${eventId}/bingo`);
                 }}
@@ -323,6 +323,9 @@ export function EventFeaturesClient({ eventId }: Props) {
                   <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
                     数字をそろえてビンゴを目指そう！
                   </p>
+                  {!fromAdmin && !features.bingo ? (
+                    <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">{FEATURE_DISABLED_HINT}</p>
+                  ) : null}
                 </span>
                 <span className={`shrink-0 ${features.bingo || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
               </button>
@@ -334,10 +337,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                 type="button"
                 disabled={!features.roulette && !fromAdmin}
                 onClick={() => {
-                  if (!features.roulette && !fromAdmin) {
-                    soon();
-                    return;
-                  }
+                  if (!features.roulette && !fromAdmin) return;
                   if (fromAdmin) router.push(`/admin/${eventId}/roulette`);
                   else router.push(`/events/${eventId}/roulette`);
                 }}
@@ -366,8 +366,8 @@ export function EventFeaturesClient({ eventId }: Props) {
                   <p className="mt-1 text-xs leading-relaxed text-[#6B7280]">
                     景品抽選・チーム分け・参加者抽選に使えます。
                   </p>
-                  {!features.roulette ? (
-                    <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">今後追加予定</p>
+                  {!fromAdmin && !features.roulette ? (
+                    <p className="mt-2 text-[11px] font-semibold text-[#9CA3AF]">{FEATURE_DISABLED_HINT}</p>
                   ) : null}
                 </span>
                 <span className={`shrink-0 ${features.roulette || fromAdmin ? "text-[#6B7280]" : "text-[#9CA3AF]"}`}>›</span>
