@@ -14,11 +14,11 @@ import { useRouletteAdminActions } from "../../../lib/use-roulette-admin-actions
 import { useRouletteHistorySync } from "../../../lib/use-roulette-history-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
 import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
+import { ROULETTE_SPIN_DURATION_MS_OPTIONS } from "../../../lib/roulette-schema";
 
 type Props = { eventId: string };
 
 const BG = "min-h-screen bg-gradient-to-b from-[#FFF7E8] via-[#FFF5EE] to-[#EDE9FE]";
-const SPIN_OPTIONS = [3000, 4000, 5000, 7000] as const;
 
 function OptionToggle({
   label,
@@ -327,7 +327,7 @@ export function AdminRouletteClient({ eventId }: Props) {
 
           <p className="mt-4 text-[11px] font-bold text-[#6B7280]">回転時間</p>
           <div className="mt-2 inline-flex flex-wrap gap-1 rounded-2xl border border-[#E9D5FF] p-1">
-            {SPIN_OPTIONS.map((ms) => (
+            {ROULETTE_SPIN_DURATION_MS_OPTIONS.map((ms) => (
               <button
                 key={ms}
                 type="button"

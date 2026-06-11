@@ -52,6 +52,11 @@ export type RouletteHistoryEntry = {
   createdAt?: Timestamp;
 };
 
+/** 運営UI・Firestore正規化で共通の回転時間（ミリ秒） */
+export const ROULETTE_SPIN_DURATION_MS_OPTIONS = [3000, 4000, 5000, 7000] as const;
+
+export type RouletteSpinDurationMs = (typeof ROULETTE_SPIN_DURATION_MS_OPTIONS)[number];
+
 export const DEFAULT_ROULETTE_SETTINGS: RouletteSettings = {
   enabled: true,
   name: "豪華景品ルーレット",
@@ -198,11 +203,11 @@ export function normalizeRouletteSettings(data: unknown): RouletteSettings {
   const o = data as Record<string, unknown>;
   const mode = o.controlMode === "participant" ? "participant" : "admin";
   let spinMs = typeof o.spinDurationMs === "number" ? o.spinDurationMs : DEFAULT_ROULETTE_SETTINGS.spinDurationMs;
-  const allowed = [3000, 5000, 7000];
+  const allowed: readonly number[] = ROULETTE_SPIN_DURATION_MS_OPTIONS;
   if (!allowed.includes(spinMs)) {
     spinMs = allowed.reduce((best, x) =>
       Math.abs(x - spinMs) < Math.abs(best - spinMs) ? x : best,
-    3000);
+    ROULETTE_SPIN_DURATION_MS_OPTIONS[0]);
   }
   return {
     enabled: o.enabled !== false,
