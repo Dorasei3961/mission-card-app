@@ -1,12 +1,12 @@
+import { FeatureIconBox } from "../about/about-feature-icon";
+
 /** 機能カード内のミニUIプレビュー（装飾のみ） */
 
 export function PreviewMission() {
   return (
     <div className="mt-4 rounded-2xl border border-violet-100 bg-white/90 p-3 shadow-sm">
       <div className="flex items-center gap-2">
-        <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-sm">
-          🎯
-        </span>
+        <FeatureIconBox kind="mission" alt="ミッション" size={20} boxClassName="h-8 w-8 rounded-xl p-1" />
         <div className="min-w-0 flex-1">
           <p className="text-[10px] font-bold text-[#7C3AED]">ミッション</p>
           <p className="truncate text-xs font-bold text-gray-800">あいさつチャレンジ</p>

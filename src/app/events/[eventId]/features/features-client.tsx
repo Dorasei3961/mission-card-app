@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, doc, onSnapshot } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, HelpCircle, LayoutGrid, Sparkles, Target } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
+import { FeatureIconBox } from "@/components/about/about-feature-icon";
 import { auth, db } from "../../../lib/firebase";
 import { clearEventScopedStorage, getEventSession } from "../../../lib/event-session";
 import { resolveEventFeatures } from "../../../lib/event-features";
@@ -216,9 +217,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     : "cursor-default border-zinc-200"
                 }`}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-[#7C3AED]">
-                  <Target className="h-6 w-6" strokeWidth={2} aria-hidden />
-                </span>
+                <FeatureIconBox kind="mission" alt="ミッションカード" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ミッションカード</span>
@@ -261,9 +260,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     : "cursor-default border-zinc-200"
                 }`}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
-                  <HelpCircle className="h-6 w-6" strokeWidth={2} aria-hidden />
-                </span>
+                <FeatureIconBox kind="quiz" alt="クイズ" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">クイズ</span>
@@ -306,9 +303,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     : "cursor-default border-zinc-200"
                 }`}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-zinc-50 text-zinc-500">
-                  <LayoutGrid className="h-6 w-6" strokeWidth={2} aria-hidden />
-                </span>
+                <FeatureIconBox kind="bingo" alt="ビンゴ" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ビンゴ</span>
@@ -347,9 +342,7 @@ export function EventFeaturesClient({ eventId }: Props) {
                     : "cursor-default border-zinc-200"
                 }`}
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-50 text-fuchsia-600">
-                  <Sparkles className="h-6 w-6" strokeWidth={2} aria-hidden />
-                </span>
+                <FeatureIconBox kind="roulette" alt="ルーレット" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-start justify-between gap-2">
                     <span className="text-base font-bold text-[#111827]">ルーレット</span>
