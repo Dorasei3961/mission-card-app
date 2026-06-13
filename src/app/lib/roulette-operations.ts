@@ -28,6 +28,44 @@ export type RouletteItemRow = {
   order: number;
 };
 
+export const ROULETTE_MAX_ITEMS = 16;
+
+export type RestoreRouletteItemReason =
+  | "not_idle"
+  | "already_restored"
+  | "item_still_exists"
+  | "duplicate_name"
+  | "max_items"
+  | "invalid_history"
+  | "missing_text"
+  | "restore_failed";
+
+export type RestoreRouletteItemResult =
+  | { ok: true }
+  | { ok: false; reason: RestoreRouletteItemReason };
+
+/** 同名判定用（name 優先、無ければ label） */
+export function rouletteItemNameKey(name: string, label: string): string {
+  const trimmedName = name.trim();
+  if (trimmedName) return trimmedName;
+  return label.trim();
+}
+
+export function mapRouletteItemDoc(id: string, raw: Record<string, unknown>): RouletteItemRow {
+  return {
+    id,
+    label: typeof raw.label === "string" ? raw.label : "",
+    name: typeof raw.name === "string" ? raw.name : "",
+    weight: typeof raw.weight === "number" ? raw.weight : 1,
+    active: raw.active !== false,
+    order: typeof raw.order === "number" ? raw.order : 0,
+  };
+}
+
+function hasRouletteDisplayText(item: RouletteItemRow): boolean {
+  return Boolean(item.name.trim() || item.label.trim());
+}
+
 /** order フィールドで並べ替え（ルーレットのセグメント順と一致させる） */
 export function sortRouletteItemsByOrder(rows: RouletteItemRow[]): RouletteItemRow[] {
   return [...rows].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, "ja"));
@@ -311,4 +349,99 @@ export async function clearAllRouletteHistory(db: Firestore, eventId: string): P
   if (snap.empty) return 0;
   await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)));
   return snap.size;
+}
+
+const RESTORE_ERROR_CODES = new Set<RestoreRouletteItemReason>([
+  "not_idle",
+  "already_restored",
+  "item_still_exists",
+  "duplicate_name",
+  "max_items",
+  "invalid_history",
+  "missing_text",
+]);
+
+/**
+ * 抽選履歴から除外済み景品をルーレットに復元する（運営専用）。
+ * - 待機中のみ
+ * - 履歴の itemId が rouletteItems に無いときのみ
+ * - 同名景品がある場合は拒否
+ */
+export async function restoreRouletteItemFromHistory(
+  db: Firestore,
+  eventId: string,
+  historyId: string,
+): Promise<RestoreRouletteItemResult> {
+  const stateRef = doc(db, "events", eventId, "rouletteState", "main");
+  const histRef = doc(db, "events", eventId, "rouletteHistory", historyId);
+  const itemsCol = collection(db, "events", eventId, "rouletteItems");
+
+  try {
+    const preItemsSnap = await getDocs(itemsCol);
+    const itemRefs = preItemsSnap.docs.map((d) => d.ref);
+
+    await runTransaction(db, async (tx) => {
+      const [stSnap, histSnap, ...itemSnaps] = await Promise.all([
+        tx.get(stateRef),
+        tx.get(histRef),
+        ...itemRefs.map((ref) => tx.get(ref)),
+      ]);
+
+      const st = normalizeRouletteState(stSnap.data());
+      if (st.status !== "idle") throw new Error("not_idle");
+
+      if (!histSnap.exists()) throw new Error("invalid_history");
+      const h = histSnap.data() as Record<string, unknown>;
+      if (h.restored === true || h.restoredAt) throw new Error("already_restored");
+
+      const sourceItemId = typeof h.itemId === "string" ? h.itemId : "";
+      const label = typeof h.label === "string" ? h.label : "";
+      const name = typeof h.name === "string" ? h.name : "";
+      if (!name.trim() && !label.trim()) throw new Error("missing_text");
+
+      const rows = itemSnaps
+        .filter((snap) => snap.exists())
+        .map((snap) => mapRouletteItemDoc(snap.id, snap.data() as Record<string, unknown>));
+      const displayRows = sortRouletteItemsByOrder(rows).filter(hasRouletteDisplayText);
+      if (displayRows.length >= ROULETTE_MAX_ITEMS) throw new Error("max_items");
+
+      if (sourceItemId && rows.some((row) => row.id === sourceItemId)) {
+        throw new Error("item_still_exists");
+      }
+
+      const restoreKey = rouletteItemNameKey(name, label);
+      if (!restoreKey) throw new Error("missing_text");
+      const duplicated = displayRows.some(
+        (row) => rouletteItemNameKey(row.name, row.label) === restoreKey,
+      );
+      if (duplicated) throw new Error("duplicate_name");
+
+      const maxOrder = rows.reduce((m, r) => Math.max(m, r.order), 0);
+      const newRef = doc(collection(db, "events", eventId, "rouletteItems"));
+      tx.set(newRef, {
+        label: label.trim(),
+        name: name.trim(),
+        weight: 1,
+        order: maxOrder + 1,
+        active: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        restoredFromHistoryId: historyId,
+      });
+
+      tx.update(histRef, {
+        restored: true,
+        restoredAt: serverTimestamp(),
+        restoredItemId: newRef.id,
+      });
+    });
+    return { ok: true };
+  } catch (e) {
+    const code = e instanceof Error ? e.message : "";
+    if (RESTORE_ERROR_CODES.has(code as RestoreRouletteItemReason)) {
+      return { ok: false, reason: code as RestoreRouletteItemReason };
+    }
+    console.error("[roulette] restore from history failed", e);
+    return { ok: false, reason: "restore_failed" };
+  }
 }

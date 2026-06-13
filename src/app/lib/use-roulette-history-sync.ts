@@ -23,6 +23,7 @@ export type RouletteHistoryRow = {
   spunBy: "admin" | "participant";
   createdAt: Timestamp | null;
   createdAtText: string;
+  restored: boolean;
 };
 
 function formatHistoryTime(raw: unknown): string {
@@ -59,6 +60,7 @@ function mapHistoryDoc(
     spunBy,
     createdAt,
     createdAtText: formatHistoryTime(raw.createdAt),
+    restored: raw.restored === true || Boolean(raw.restoredAt),
   };
 }
 

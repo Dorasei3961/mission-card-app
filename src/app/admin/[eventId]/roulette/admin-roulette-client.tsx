@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { doc, onSnapshot } from "firebase/firestore";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SimpleRouletteCanvas } from "@/components/roulette/simple-roulette-canvas";
 import { db } from "../../../lib/firebase";
 import { useRedirectIfEventMissing } from "../../../lib/use-redirect-if-event-missing";
@@ -10,7 +10,7 @@ import { useEventAdminAccess } from "../../../lib/use-event-admin-access";
 import { useRouletteItemsSync } from "../../../lib/use-roulette-items-sync";
 import type { RouletteItemRow } from "../../../lib/roulette-operations";
 import { rouletteWinnerDisplayText } from "../../../lib/roulette-display";
-import { useRouletteAdminActions } from "../../../lib/use-roulette-admin-actions";
+import { useRouletteAdminActions, canRestoreRouletteHistoryRow, hasDuplicateRouletteItemName } from "../../../lib/use-roulette-admin-actions";
 import { useRouletteHistorySync } from "../../../lib/use-roulette-history-sync";
 import { useRouletteSettingsSync } from "../../../lib/use-roulette-settings-sync";
 import { useRouletteStateSync } from "../../../lib/use-roulette-state-sync";
@@ -143,6 +143,7 @@ export function AdminRouletteClient({ eventId }: Props) {
   } = useRouletteSettingsSync(eventId, { seedIfMissing: true });
 
   const {
+    items,
     displaySorted,
     displayLabels,
     editorItems,
@@ -182,11 +183,16 @@ export function AdminRouletteClient({ eventId }: Props) {
   const {
     forceBusy,
     clearHistoryBusy,
+    restoreBusyId,
     lastError,
     clearError,
     handleForceWinner,
     handleClearHistory,
+    handleRestoreFromHistory,
   } = useRouletteAdminActions(eventId, displaySorted);
+
+  const existingItemIds = useMemo(() => new Set(items.map((item) => item.id)), [items]);
+  const isIdle = !isSpinning && !isFinished;
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "events", eventId), (snap) => {
@@ -243,6 +249,19 @@ export function AdminRouletteClient({ eventId }: Props) {
     }
     clearError();
     await handleClearHistory();
+  };
+
+  const onRestoreHistory = async (displayText: string, historyId: string) => {
+    if (!historyId || restoreBusyId) return;
+    if (
+      !window.confirm(
+        `「${displayText}」をルーレットに戻します。\n並び順は末尾・重みは1で追加されます。よろしいですか？`,
+      )
+    ) {
+      return;
+    }
+    clearError();
+    await handleRestoreFromHistory(historyId);
   };
 
   if (allowed !== true) {
@@ -470,7 +489,9 @@ export function AdminRouletteClient({ eventId }: Props) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold text-[#111827]">抽選履歴</h2>
-              <p className="mt-1 text-[11px] text-[#6B7280]">直近30件を新しい順に表示します</p>
+              <p className="mt-1 text-[11px] text-[#6B7280]">
+                直近30件を新しい順に表示。除外された景品は履歴から復元できます
+              </p>
             </div>
             <button
               type="button"
@@ -489,22 +510,49 @@ export function AdminRouletteClient({ eventId }: Props) {
             </p>
           ) : (
             <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto">
-              {historyRows.map((row) => (
-                <li
-                  key={row.id}
-                  className="flex items-start justify-between gap-3 rounded-xl border border-violet-100 px-3 py-2.5"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-[#111827]">{row.displayText}</p>
-                    <p className="mt-0.5 text-[11px] text-[#6B7280]">
-                      {spunByLabel[row.spunBy]}が操作
-                    </p>
-                  </div>
-                  <time className="shrink-0 text-[11px] font-medium text-[#9CA3AF]">
-                    {row.createdAtText}
-                  </time>
-                </li>
-              ))}
+              {historyRows.map((row) => {
+                const restorable = canRestoreRouletteHistoryRow(
+                  row,
+                  existingItemIds,
+                  isIdle,
+                  displaySorted.length,
+                );
+                const duplicateName = hasDuplicateRouletteItemName(row.name, row.label, displaySorted);
+                const showRestore = restorable && !duplicateName;
+                const restoring = restoreBusyId === row.id;
+
+                return (
+                  <li
+                    key={row.id}
+                    className="flex items-start justify-between gap-3 rounded-xl border border-violet-100 px-3 py-2.5"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-[#111827]">{row.displayText}</p>
+                      <p className="mt-0.5 text-[11px] text-[#6B7280]">
+                        {spunByLabel[row.spunBy]}が操作
+                      </p>
+                      {row.restored ? (
+                        <p className="mt-1 text-[10px] font-semibold text-emerald-700">復元済み</p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <time className="text-[11px] font-medium text-[#9CA3AF]">
+                        {row.createdAtText}
+                      </time>
+                      {showRestore ? (
+                        <button
+                          type="button"
+                          disabled={Boolean(restoreBusyId) || !isIdle}
+                          onClick={() => void onRestoreHistory(row.displayText, row.id)}
+                          className="rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-bold text-[#7C3AED] disabled:opacity-45"
+                        >
+                          {restoring ? "復元中…" : "復元"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
